@@ -3,7 +3,7 @@ let todaySongs = [];
 
 const CLIPS = [1, 2, 4, 6, 8, 10];
 const MAX_GUESSES = 6;
-const PUZZLE_EPOCH_UTC = Date.UTC(2026, 0, 1);
+const PUZZLE_EPOCH_UTC = Date.UTC(2026, 2, 16);
 
 let songIndex = 0;
 let guessNumber = 0;
