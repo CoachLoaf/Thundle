@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Thundle</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <h1>⚡ THUNDLE ⚡</h1>
+      <h2 id="puzzleNumber">#0</h2>
+      <p class="subtitle">Guess the ThunderPunch song.</p>
+    </header>
+
+    <section id="game" class="card">
+      <div class="song-header">
+        <h2 id="songLabel">Song #1</h2>
+        <p id="roundHint" class="round-hint">Starts at the beginning of the track.</p>
+      </div>
+
+      <div class="controls">
+        <button id="playButton" onclick="playClip()">▶ Play Clip</button>
+      </div>
+
+      <div id="waveformWrap" class="waveform-wrap" aria-hidden="true">
+        <div id="waveformFill" class="waveform-fill"></div>
+        <div class="wave-bars">
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div class="guess-area">
+        <input
+          id="guessInput"
+          type="text"
+          placeholder="Guess song"
+          autocomplete="off"
+          aria-label="Guess song title"
+        />
+        <div id="suggestions" class="suggestions"></div>
+      </div>
+
+      <div class="actions">
+        <button id="guessButton" onclick="submitGuess()">Guess</button>
+      </div>
+
+      <p id="feedback" class="feedback"></p>
+
+      <div id="attemptRow" class="attempt-row" aria-label="Current attempt progress"></div>
+
+      <div id="artWrap" class="art-wrap" style="display:none;">
+        <img id="albumArt" src="" alt="Album art" />
+      </div>
+    </section>
+  </main>
+
+  <div id="resultModal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <h2>Results</h2>
+
+      <p id="resultsTitle" class="stats-text"></p>
+      <p id="stats" class="stats-text"></p>
+
+      <div class="distribution">
+        <h3>Guess Distribution</h3>
+        <div id="distributionChart"></div>
+      </div>
+
+      <div id="shareGrid" class="share-grid"></div>
+      <p id="copiedMessage" class="copied-message"></p>
+
+      <div class="modal-actions">
+        <button id="bonusButton" onclick="startBonusFromModal()">Play Bonus Song</button>
+        <button onclick="share()">Share Results</button>
+        <button onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
