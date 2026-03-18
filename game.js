@@ -189,6 +189,31 @@ function playClip() {
   const audio = preloadedAudio[songIndex] ? preloadedAudio[songIndex].cloneNode() : new Audio(song.file);
   currentAudio = audio;
 
+  let clipTimeout = null;
+  let playbackHandled = false;
+
+  function restoreButton() {
+    button.innerText = "Play Clip";
+    button.disabled = false;
+  }
+
+  function beginPlayback() {
+    if (playbackHandled) return;
+    playbackHandled = true;
+
+    stopWaveformLoading();
+    startWaveform(clipSeconds);
+    button.innerText = "Playing…";
+
+    clipTimeout = setTimeout(() => {
+      if (currentAudio === audio) {
+        audio.pause();
+        stopWaveform();
+        restoreButton();
+      }
+    }, clipSeconds * 1000);
+  }
+
   audio.addEventListener("loadedmetadata", () => {
     let startTime = 0;
 
@@ -202,32 +227,30 @@ function playClip() {
 
     audio.currentTime = Math.max(0, startTime);
 
-    audio.play().then(() => {
-      stopWaveformLoading();
-      startWaveform(clipSeconds);
-      button.innerText = "Playing…";
-    }).catch(err => {
+    audio.play().catch(err => {
       console.error("Audio playback failed:", err);
       stopWaveformLoading();
-      button.innerText = "Play Clip";
-      button.disabled = false;
+      stopWaveform();
+      restoreButton();
     });
+  });
 
-    setTimeout(() => {
-      if (currentAudio === audio) {
-        audio.pause();
-        stopWaveform();
-        button.innerText = "Play Clip";
-        button.disabled = false;
-      }
-    }, clipSeconds * 1000);
+  audio.addEventListener("playing", beginPlayback, { once: true });
+
+  audio.addEventListener("ended", () => {
+    if (clipTimeout) clearTimeout(clipTimeout);
+    if (currentAudio === audio) {
+      stopWaveform();
+      restoreButton();
+    }
   });
 
   audio.addEventListener("error", () => {
     console.error("Audio failed to load:", song.file);
+    if (clipTimeout) clearTimeout(clipTimeout);
     stopWaveformLoading();
-    button.innerText = "Play Clip";
-    button.disabled = false;
+    stopWaveform();
+    restoreButton();
   });
 
   if (audio.readyState >= 1) {
@@ -901,7 +924,7 @@ function buildShareRow(index) {
   return row;
 }
 
-function buildShareText() {
+function buildShareText(includeLink = true) {
   const puzzleNum = document.getElementById("puzzleNumber").innerText;
   const stats = getStats();
 
@@ -916,21 +939,29 @@ function buildShareText() {
   const streakText = stats.streak > 0 ? ` 🔥${stats.streak} day streak!` : "";
   const link = window.location.origin;
 
-  return `${mainIcon} Thundle ${puzzleNum}${streakText}
+  let text = `${mainIcon} Thundle ${puzzleNum}${streakText}
 
 ${row1}
 ${bonusIcon} Bonus
-${row2}
+${row2}`;
+
+  if (includeLink) {
+    text += `
 
 ${link}`;
+  }
+
+  return text;
 }
 
 async function share() {
-  const text = buildShareText();
+  const textForNativeShare = buildShareText(false);
+  const textForClipboard = buildShareText(true);
+
   const shareData = {
     title: "Thundle",
-    text: text,
-    url: window.location.href
+    text: textForNativeShare,
+    url: window.location.origin
   };
 
   try {
@@ -940,7 +971,7 @@ async function share() {
       return;
     }
 
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(textForClipboard);
     document.getElementById("copiedMessage").innerText = "Copied!";
   } catch (error) {
     if (error && error.name === "AbortError") {
@@ -949,7 +980,7 @@ async function share() {
     }
 
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(textForClipboard);
       document.getElementById("copiedMessage").innerText = "Copied!";
     } catch {
       document.getElementById("copiedMessage").innerText = "Could not share";
