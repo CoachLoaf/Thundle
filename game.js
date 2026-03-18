@@ -12,6 +12,11 @@ let currentAudio = null;
 let waveformTimer = null;
 let bonusStarted = false;
 let gameFinished = false;
+let resultPreviewAudio = null;
+let resultPreviewSongIndex = null;
+let confettiPieces = [];
+let confettiAnimationFrame = null;
+let preloadedAudio = [null, null];
 
 fetch("songs.json")
   .then(r => r.json())
@@ -19,12 +24,13 @@ fetch("songs.json")
     songs = data;
     setupAutocomplete();
     pickDailySongs();
+    preloadTodaySongs();
     showPuzzleNumber();
     renderAttemptRow();
+    loadProgressIfAvailable();
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
   })
-  .catch(err => {
-    console.error("Failed to load songs.json:", err);
-  });
 
 function getDefaultStats() {
   return {
@@ -144,6 +150,19 @@ function getCurrentSong() {
   return todaySongs[songIndex];
 }
 
+function preloadTodaySongs() {
+  preloadedAudio = [null, null];
+
+  todaySongs.forEach((song, index) => {
+    if (!song || !song.file) return;
+
+    const audio = new Audio();
+    audio.preload = "auto";
+    audio.src = song.file;
+    preloadedAudio[index] = audio;
+  });
+}
+
 function stopCurrentAudio() {
   if (currentAudio) {
     currentAudio.pause();
@@ -156,13 +175,18 @@ function stopCurrentAudio() {
 function playClip() {
   if (gameFinished) return;
 
+  const button = document.getElementById("playButton");
   const song = getCurrentSong();
   if (!song) return;
 
+  button.disabled = true;
+  button.innerText = "Loading…";
+
   stopCurrentAudio();
+  startWaveformLoading();
 
   const clipSeconds = CLIPS[Math.min(guessNumber, CLIPS.length - 1)];
-  const audio = new Audio(song.file);
+  const audio = preloadedAudio[songIndex] ? preloadedAudio[songIndex].cloneNode() : new Audio(song.file);
   currentAudio = audio;
 
   audio.addEventListener("loadedmetadata", () => {
@@ -177,19 +201,54 @@ function playClip() {
     }
 
     audio.currentTime = Math.max(0, startTime);
-    audio.play().catch(err => {
-      console.error("Audio playback failed:", err);
-    });
 
-    startWaveform(clipSeconds);
+    audio.play().then(() => {
+      stopWaveformLoading();
+      startWaveform(clipSeconds);
+      button.innerText = "Playing…";
+    }).catch(err => {
+      console.error("Audio playback failed:", err);
+      stopWaveformLoading();
+      button.innerText = "Play Clip";
+      button.disabled = false;
+    });
 
     setTimeout(() => {
       if (currentAudio === audio) {
         audio.pause();
         stopWaveform();
+        button.innerText = "Play Clip";
+        button.disabled = false;
       }
     }, clipSeconds * 1000);
   });
+
+  audio.addEventListener("error", () => {
+    console.error("Audio failed to load:", song.file);
+    stopWaveformLoading();
+    button.innerText = "Play Clip";
+    button.disabled = false;
+  });
+
+  if (audio.readyState >= 1) {
+    audio.dispatchEvent(new Event("loadedmetadata"));
+  } else {
+    audio.load();
+  }
+}
+
+function startWaveformLoading() {
+  const wrap = document.getElementById("waveformWrap");
+  const fill = document.getElementById("waveformFill");
+
+  stopWaveform();
+  fill.style.width = "0%";
+  wrap.classList.add("loading");
+}
+
+function stopWaveformLoading() {
+  const wrap = document.getElementById("waveformWrap");
+  wrap.classList.remove("loading");
 }
 
 function startWaveform(durationSeconds) {
@@ -212,11 +271,25 @@ function startWaveform(durationSeconds) {
 
 function stopWaveform() {
   const fill = document.getElementById("waveformFill");
+  const wrap = document.getElementById("waveformWrap");
+
   if (waveformTimer) {
     clearInterval(waveformTimer);
     waveformTimer = null;
   }
+
   fill.style.width = "0%";
+  wrap.classList.remove("loading");
+}
+
+function animateReveal(...elements) {
+  elements.forEach(el => {
+    if (!el) return;
+
+    el.classList.remove("reveal-pop");
+    void el.offsetWidth;
+    el.classList.add("reveal-pop");
+  });
 }
 
 function submitGuess() {
@@ -231,18 +304,24 @@ function submitGuess() {
   const answer = song.title.toLowerCase();
 
   if (guess === answer) {
-    guessHistory[songIndex].push("correct");
-    document.getElementById("feedback").innerText = "Correct!";
-    showAlbumArt(song);
-    renderAttemptRow();
-    stopCurrentAudio();
+  guessHistory[songIndex].push("correct");
 
-    input.value = "";
-    document.getElementById("suggestions").innerHTML = "";
+  const feedback = document.getElementById("feedback");
+  feedback.innerText = "Correct!";
+  animateReveal(feedback);
 
-    finishCurrentRound();
-    return;
-  }
+  launchConfetti();
+  showAlbumArt(song);
+  renderAttemptRow();
+  stopCurrentAudio();
+
+  input.value = "";
+  document.getElementById("suggestions").innerHTML = "";
+
+  saveProgress();
+  finishCurrentRound();
+  return;
+}
 
   guessHistory[songIndex].push("wrong");
   guessNumber++;
@@ -259,6 +338,111 @@ function submitGuess() {
 
   input.value = "";
   document.getElementById("suggestions").innerHTML = "";
+  saveProgress();
+}
+
+function stopResultPreviewAudio() {
+  if (resultPreviewAudio) {
+    resultPreviewAudio.pause();
+    resultPreviewAudio.currentTime = 0;
+    resultPreviewAudio = null;
+  }
+
+  resultPreviewSongIndex = null;
+
+  const btn0 = document.getElementById("resultPlayButton0");
+  const btn1 = document.getElementById("resultPlayButton1");
+
+  if (btn0) btn0.innerText = "▶";
+  if (btn1) btn1.innerText = "▶";
+}
+
+function toggleResultSong(index) {
+  const song = todaySongs[index];
+  if (!song) return;
+
+  const button = document.getElementById(`resultPlayButton${index}`);
+  if (!button) return;
+
+  if (resultPreviewAudio && resultPreviewSongIndex === index) {
+    if (resultPreviewAudio.paused) {
+      resultPreviewAudio.play().catch(err => {
+        console.error("Result preview resume failed:", err);
+      });
+      button.innerText = "⏸";
+    } else {
+      resultPreviewAudio.pause();
+      button.innerText = "▶";
+    }
+    return;
+  }
+
+  stopResultPreviewAudio();
+
+  resultPreviewAudio = new Audio(song.file);
+  resultPreviewSongIndex = index;
+
+  resultPreviewAudio.addEventListener("ended", () => {
+    stopResultPreviewAudio();
+  });
+
+  resultPreviewAudio.play().then(() => {
+    button.innerText = "⏸";
+  }).catch(err => {
+    console.error("Result preview play failed:", err);
+    stopResultPreviewAudio();
+  });
+}
+
+function populateResultSongCards(isFinalRound) {
+  const mainSong = todaySongs[0];
+  const bonusSong = todaySongs[1];
+
+  const mainArt = document.getElementById("resultAlbumArt0");
+  const mainTitle = document.getElementById("resultSongTitle0");
+  const mainButton = document.getElementById("resultPlayButton0");
+  const mainSpotify = document.getElementById("resultSpotifyLink0");
+
+  const bonusCard = document.getElementById("bonusResultCard");
+  const bonusArt = document.getElementById("resultAlbumArt1");
+  const bonusTitle = document.getElementById("resultSongTitle1");
+  const bonusButton = document.getElementById("resultPlayButton1");
+  const bonusSpotify = document.getElementById("resultSpotifyLink1");
+
+  if (mainSong) {
+    mainArt.src = mainSong.art || "";
+    mainTitle.innerText = mainSong.title;
+    mainButton.style.display = "inline-flex";
+    mainArt.style.display = mainSong.art ? "block" : "none";
+
+    if (mainSong.spotify) {
+      mainSpotify.href = mainSong.spotify;
+      mainSpotify.style.display = "inline-flex";
+    } else {
+      mainSpotify.style.display = "none";
+    }
+
+    animateReveal(mainArt, mainTitle);
+  }
+
+  if (isFinalRound && bonusStarted && bonusSong) {
+    bonusCard.style.display = "block";
+    bonusArt.src = bonusSong.art || "";
+    bonusTitle.innerText = bonusSong.title;
+    bonusButton.style.display = "inline-flex";
+    bonusArt.style.display = bonusSong.art ? "block" : "none";
+
+    if (bonusSong.spotify) {
+      bonusSpotify.href = bonusSong.spotify;
+      bonusSpotify.style.display = "inline-flex";
+    } else {
+      bonusSpotify.style.display = "none";
+    }
+
+    animateReveal(bonusArt, bonusTitle, bonusCard);
+  } else {
+    bonusCard.style.display = "none";
+  }
 }
 
 function finishCurrentRound() {
@@ -266,13 +450,18 @@ function finishCurrentRound() {
   document.getElementById("guessInput").disabled = true;
   document.getElementById("guessButton").disabled = true;
 
+  saveProgress();
+
   if (songIndex === 0) {
     prepareResults(false);
+    document.getElementById("showResultsSection").style.display = "block";
     openResultsModal();
   } else {
     gameFinished = true;
+    saveProgress();
     updateStatsFinal();
     prepareResults(true);
+    document.getElementById("showResultsSection").style.display = "block";
     openResultsModal();
   }
 }
@@ -308,6 +497,7 @@ function showAlbumArt(song) {
 
   albumArt.onload = () => {
     artWrap.style.display = "block";
+    animateReveal(albumArt, artWrap);
   };
 
   albumArt.onerror = () => {
@@ -319,6 +509,7 @@ function showAlbumArt(song) {
 }
 
 function startBonusFromModal() {
+  stopResultPreviewAudio();
   closeModal();
   startBonus();
 }
@@ -337,8 +528,10 @@ function startBonus() {
   document.getElementById("playButton").disabled = false;
   document.getElementById("suggestions").innerHTML = "";
   document.getElementById("artWrap").style.display = "none";
+  document.getElementById("showResultsSection").style.display = "none";
 
   renderAttemptRow();
+  saveProgress();
 }
 
 function didWinSong(index) {
@@ -382,6 +575,236 @@ function updateStatsFinal() {
   saveStats(stats);
 }
 
+function getDefaultProgress() {
+  return {
+    dateKey: "",
+    songIndex: 0,
+    guessNumber: 0,
+    guessHistory: [[], []],
+    bonusStarted: false,
+    gameFinished: false,
+    resultsModalOpen: false
+  };
+}
+
+function getProgress() {
+  let progress;
+
+  try {
+    progress = JSON.parse(localStorage.getItem("thundleProgress")) || {};
+  } catch {
+    progress = {};
+  }
+
+  const defaults = getDefaultProgress();
+
+  return {
+    dateKey: typeof progress.dateKey === "string" ? progress.dateKey : defaults.dateKey,
+    songIndex: Number.isInteger(progress.songIndex) ? progress.songIndex : defaults.songIndex,
+    guessNumber: Number.isInteger(progress.guessNumber) ? progress.guessNumber : defaults.guessNumber,
+    guessHistory:
+      Array.isArray(progress.guessHistory) &&
+      progress.guessHistory.length === 2 &&
+      Array.isArray(progress.guessHistory[0]) &&
+      Array.isArray(progress.guessHistory[1])
+        ? [
+            progress.guessHistory[0].filter(v => v === "correct" || v === "wrong"),
+            progress.guessHistory[1].filter(v => v === "correct" || v === "wrong")
+          ]
+        : defaults.guessHistory,
+    bonusStarted: typeof progress.bonusStarted === "boolean" ? progress.bonusStarted : defaults.bonusStarted,
+    gameFinished: typeof progress.gameFinished === "boolean" ? progress.gameFinished : defaults.gameFinished,
+    resultsModalOpen: typeof progress.resultsModalOpen === "boolean" ? progress.resultsModalOpen : defaults.resultsModalOpen
+  };
+}
+
+function launchConfetti() {
+  const canvas = document.getElementById("confettiCanvas");
+  if (!canvas) return;
+
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  canvas.style.width = `${window.innerWidth}px`;
+  canvas.style.height = `${window.innerHeight}px`;
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  confettiPieces = [];
+
+  for (let i = 0; i < 180; i++) {
+    confettiPieces.push({
+      x: Math.random() * window.innerWidth,
+      y: -20 - Math.random() * window.innerHeight * 0.3,
+      w: 8 + Math.random() * 6,
+      h: 10 + Math.random() * 8,
+      vx: -3 + Math.random() * 6,
+      vy: 2 + Math.random() * 4,
+      gravity: 0.05 + Math.random() * 0.08,
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: -0.2 + Math.random() * 0.4,
+      color: ["#ffe066", "#ff5a5a", "#2ecc71", "#66d9ff", "#c084fc"][Math.floor(Math.random() * 5)],
+      life: 120 + Math.random() * 40
+    });
+  }
+
+  if (confettiAnimationFrame) {
+    cancelAnimationFrame(confettiAnimationFrame);
+  }
+
+  function animateConfetti() {
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+    confettiPieces.forEach(piece => {
+      piece.x += piece.vx;
+      piece.y += piece.vy;
+      piece.vy += piece.gravity;
+      piece.rotation += piece.rotationSpeed;
+      piece.life -= 1;
+
+      ctx.save();
+      ctx.translate(piece.x, piece.y);
+      ctx.rotate(piece.rotation);
+      ctx.fillStyle = piece.color;
+      ctx.fillRect(-piece.w / 2, -piece.h / 2, piece.w, piece.h);
+      ctx.restore();
+    });
+
+    confettiPieces = confettiPieces.filter(piece =>
+      piece.life > 0 && piece.y < window.innerHeight + 40
+    );
+
+    if (confettiPieces.length > 0) {
+      confettiAnimationFrame = requestAnimationFrame(animateConfetti);
+    } else {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      confettiAnimationFrame = null;
+    }
+  }
+
+  animateConfetti();
+}
+
+window.addEventListener("resize", () => {
+  const canvas = document.getElementById("confettiCanvas");
+  if (!canvas) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  canvas.style.width = `${window.innerWidth}px`;
+  canvas.style.height = `${window.innerHeight}px`;
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+});
+
+function saveProgress() {
+  const modal = document.getElementById("resultModal");
+
+  const progress = {
+    dateKey: getTodayKeyUTC(),
+    songIndex,
+    guessNumber,
+    guessHistory,
+    bonusStarted,
+    gameFinished,
+    resultsModalOpen: modal ? modal.style.display === "block" : false
+  };
+
+  localStorage.setItem("thundleProgress", JSON.stringify(progress));
+}
+
+function clearProgress() {
+  localStorage.removeItem("thundleProgress");
+}
+
+function loadProgressIfAvailable() {
+  const progress = getProgress();
+  const todayKey = getTodayKeyUTC();
+
+  if (progress.dateKey !== todayKey) {
+    clearProgress();
+    return;
+  }
+
+  songIndex = progress.songIndex;
+  guessNumber = progress.guessNumber;
+  guessHistory = progress.guessHistory;
+  bonusStarted = progress.bonusStarted;
+  gameFinished = progress.gameFinished;
+
+  if (songIndex === 1) {
+    document.getElementById("songLabel").innerText = "Bonus Song";
+    document.getElementById("roundHint").innerText = "Starts from a seeded random point in the middle.";
+  } else {
+    document.getElementById("songLabel").innerText = "Song #1";
+    document.getElementById("roundHint").innerText = "Starts at the beginning of the track.";
+  }
+
+  const playedMain = guessHistory[0].length > 0;
+  const finishedMain = playedMain && (
+    guessHistory[0].includes("correct") || guessHistory[0].length >= MAX_GUESSES
+  );
+
+  const finishedBonus = guessHistory[1].length > 0 && (
+    guessHistory[1].includes("correct") || guessHistory[1].length >= MAX_GUESSES
+  );
+
+  if (finishedMain && !bonusStarted) {
+    document.getElementById("playButton").disabled = true;
+    document.getElementById("guessInput").disabled = true;
+    document.getElementById("guessButton").disabled = true;
+    document.getElementById("showResultsSection").style.display = "block";
+  } else if (songIndex === 1 && !gameFinished) {
+    document.getElementById("guessInput").disabled = false;
+    document.getElementById("guessButton").disabled = false;
+    document.getElementById("playButton").disabled = false;
+    document.getElementById("showResultsSection").style.display = "none";
+  }
+
+  if (gameFinished || finishedBonus) {
+    document.getElementById("showResultsSection").style.display = "block";
+    document.getElementById("playButton").disabled = true;
+    document.getElementById("guessInput").disabled = true;
+    document.getElementById("guessButton").disabled = true;
+  }
+
+  const currentSong = todaySongs[songIndex];
+  const currentHistory = guessHistory[songIndex];
+
+  if (currentHistory.includes("correct")) {
+    document.getElementById("feedback").innerText = "Correct!";
+    if (currentSong) showAlbumArt(currentSong);
+  } else if (currentHistory.length >= MAX_GUESSES) {
+    document.getElementById("feedback").innerText = currentSong ? `Answer: ${currentSong.title}` : "";
+    if (currentSong) showAlbumArt(currentSong);
+  } else {
+    document.getElementById("feedback").innerText = "";
+    document.getElementById("artWrap").style.display = "none";
+  }
+
+  renderAttemptRow();
+
+  if (gameFinished) {
+    prepareResults(true);
+  } else if (finishedMain && !bonusStarted) {
+    prepareResults(false);
+  }
+
+  if (progress.resultsModalOpen) {
+    if (gameFinished) {
+      prepareResults(true);
+      openResultsModal();
+    } else if (finishedMain) {
+      prepareResults(false);
+      openResultsModal();
+    }
+  }
+}
+
 function isYesterdayUTC(lastPlayed, todayKey) {
   const last = new Date(lastPlayed + "T00:00:00Z");
   const today = new Date(todayKey + "T00:00:00Z");
@@ -405,6 +828,7 @@ function prepareResults(isFinalRound) {
   statsEl.innerText =
     `Played: ${stats.played}\nWin %: ${winPercent}\nStreak: ${stats.streak}\nBest: ${stats.best}`;
 
+  populateResultSongCards(isFinalRound);
   renderDistributionChart(stats.distribution);
   shareGridEl.innerText = buildShareText();
   copiedMessageEl.innerText = "";
@@ -417,11 +841,16 @@ function openResultsModal() {
     console.error("resultModal element not found");
     return;
   }
+
+  stopResultPreviewAudio();
   modal.style.display = "block";
+  saveProgress();
 }
 
 function closeModal() {
+  stopResultPreviewAudio();
   document.getElementById("resultModal").style.display = "none";
+  saveProgress();
 }
 
 function renderDistributionChart(distribution) {
@@ -485,14 +914,81 @@ function buildShareText() {
   const mainIcon = mainWon ? "🏆" : "❌";
   const bonusIcon = bonusStarted ? (bonusWon ? "🏆" : "❌") : "⬜";
   const streakText = stats.streak > 0 ? ` 🔥${stats.streak} day streak!` : "";
+  const link = window.location.origin;
 
-  return `${mainIcon} Thundle ${puzzleNum}${streakText}\n${row1}\n${bonusIcon} Bonus:\n${row2}`;
+  return `${mainIcon} Thundle ${puzzleNum}${streakText}
+
+${row1}
+${bonusIcon} Bonus
+${row2}
+
+${link}`;
 }
 
-function share() {
-  navigator.clipboard.writeText(buildShareText()).then(() => {
+async function share() {
+  const text = buildShareText();
+  const shareData = {
+    title: "Thundle",
+    text: text,
+    url: window.location.href
+  };
+
+  try {
+    if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+      await navigator.share(shareData);
+      document.getElementById("copiedMessage").innerText = "Shared!";
+      return;
+    }
+
+    await navigator.clipboard.writeText(text);
     document.getElementById("copiedMessage").innerText = "Copied!";
-  }).catch(() => {
-    document.getElementById("copiedMessage").innerText = "Could not copy";
-  });
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      document.getElementById("copiedMessage").innerText = "Share canceled";
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      document.getElementById("copiedMessage").innerText = "Copied!";
+    } catch {
+      document.getElementById("copiedMessage").innerText = "Could not share";
+    }
+  }
+}
+
+function getNextPuzzleUTCDate() {
+  const now = new Date();
+  return new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0, 0, 0, 0
+  ));
+}
+
+function formatCountdown(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function updateCountdown() {
+  const now = new Date();
+  const nextPuzzle = getNextPuzzleUTCDate();
+  const diff = nextPuzzle - now;
+  const text = `Next Thundle in ${formatCountdown(diff)}`;
+
+  const pageCountdown = document.getElementById("countdownText");
+  const modalCountdown = document.getElementById("modalCountdownText");
+
+  if (pageCountdown) {
+    pageCountdown.innerText = text;
+  }
+
+  if (modalCountdown) {
+    modalCountdown.innerText = text;
+  }
 }

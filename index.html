@@ -4,14 +4,27 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Thundle</title>
+  <link rel="icon" type="image/png" href="branding/favicon.png" />
+
+<meta property="og:title" content="Thundle" />
+<meta property="og:description" content="The daily ThunderPunch! guessing game" />
+<meta property="og:image" content="https://thundle.vercel.app/branding/social-preview.png" />
+<meta property="og:url" content="https://thundle.vercel.app" />
+<meta property="og:type" content="website" />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Thundle" />
+<meta name="twitter:description" content="The daily ThunderPunch! guessing game" />
+<meta name="twitter:image" content="https://thundle.vercel.app/branding/social-preview.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
+<canvas id="confettiCanvas"></canvas>
 <body>
   <main class="page">
     <header class="hero">
       <h1>⚡ THUNDLE ⚡</h1>
       <h2 id="puzzleNumber">#0</h2>
-      <p class="subtitle">Guess the ThunderPunch song.</p>
+      <p class="subtitle">Guess the ThunderPunch! song.</p>
     </header>
 
     <section id="game" class="card">
@@ -57,30 +70,66 @@
         <img id="albumArt" src="" alt="Album art" />
       </div>
     </section>
+    <section class="card next-card">
+
+      <section id="showResultsSection" class="card next-card" style="display:none;">
+  <h2>Results</h2>
+  <button onclick="openResultsModal()">Show Results</button>
+</section>
+  <h2>Next Thundle</h2>
+  <p id="countdownText" class="bonus-text">Loading...</p>
+</section>
   </main>
 
   <div id="resultModal" class="modal" style="display:none;">
-    <div class="modal-content">
-      <h2>Results</h2>
+  <div class="modal-content">
+    <h2>Results</h2>
 
-      <p id="resultsTitle" class="stats-text"></p>
-      <p id="stats" class="stats-text"></p>
+    <p id="resultsTitle" class="stats-text"></p>
+    <p id="stats" class="stats-text"></p>
+    <p id="modalCountdownText" class="stats-text"></p>
 
-      <div class="distribution">
-        <h3>Guess Distribution</h3>
-        <div id="distributionChart"></div>
-      </div>
+    <div id="resultsSongsWrap" class="results-songs-wrap">
+  <div class="result-song-card">
+    <h3>Main Song</h3>
+    <div class="result-art-button-wrap">
+      <img id="resultAlbumArt0" class="result-album-art" src="" alt="Main song album art" />
+      <button id="resultPlayButton0" class="result-art-play-button" onclick="toggleResultSong(0)">▶</button>
+    </div>
+    <p id="resultSongTitle0" class="result-song-title"></p>
+    <a id="resultSpotifyLink0" class="spotify-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" aria-label="Listen on Spotify">
+  <img src="branding/spotify-logo.png" alt="Spotify" class="spotify-logo" />
+</a>
+  </div>
 
-      <div id="shareGrid" class="share-grid"></div>
-      <p id="copiedMessage" class="copied-message"></p>
+  <div id="bonusResultCard" class="result-song-card" style="display:none;">
+    <h3>Bonus Song</h3>
+    <div class="result-art-button-wrap">
+      <img id="resultAlbumArt1" class="result-album-art" src="" alt="Bonus song album art" />
+      <button id="resultPlayButton1" class="result-art-play-button" onclick="toggleResultSong(1)">▶</button>
+    </div>
+    <p id="resultSongTitle1" class="result-song-title"></p>
+    <a id="resultSpotifyLink1" class="spotify-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" aria-label="Listen on Spotify">
+  <img src="branding/spotify-logo.png" alt="Spotify" class="spotify-logo" />
+</a>
+  </div>
+</div>
 
-      <div class="modal-actions">
-        <button id="bonusButton" onclick="startBonusFromModal()">Play Bonus Song</button>
-        <button onclick="share()">Share Results</button>
-        <button onclick="closeModal()">Close</button>
-      </div>
+    <div class="distribution">
+      <h3>Guess Distribution</h3>
+      <div id="distributionChart"></div>
+    </div>
+
+    <div id="shareGrid" class="share-grid"></div>
+    <p id="copiedMessage" class="copied-message"></p>
+
+    <div class="modal-actions">
+      <button id="bonusButton" onclick="startBonusFromModal()">Play Bonus Song</button>
+      <button onclick="share()">Share Results</button>
+      <button onclick="closeModal()">Close</button>
     </div>
   </div>
+</div>
 
   <script src="game.js"></script>
 </body>
