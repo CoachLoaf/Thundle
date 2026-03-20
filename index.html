@@ -18,66 +18,91 @@
 <meta name="twitter:image" content="https://thundle.vercel.app/branding/social-preview.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
-<canvas id="confettiCanvas"></canvas>
 <body>
+  <canvas id="confettiCanvas"></canvas>
+
   <main class="page">
     <header class="hero">
-      <button id="settingsButton" class="settings-button" type="button" onclick="openSettingsModal()" aria-label="Open settings">
-        ⚙
-      </button>
+      <div class="top-right-menu">
+  <button
+    id="menuButton"
+    class="menu-button"
+    type="button"
+    aria-label="Open menu"
+    aria-expanded="false"
+    onclick="toggleTopMenu()"
+  >
+    ☰
+  </button>
+
+  <div id="topMenuDropdown" class="top-menu-dropdown" style="display:none;">
+    <button type="button" class="top-menu-item" onclick="openSettingsFromMenu()">
+      <span class="top-menu-icon">⚙</span>
+      <span>Settings</span>
+    </button>
+
+    <button type="button" class="top-menu-item" onclick="openWhatsNewFromMenu()">
+      <span class="top-menu-icon">✨</span>
+      <span>What's New?</span>
+    </button>
+  </div>
+</div>
+
       <h1>⚡ THUNDLE ⚡</h1>
       <h2 id="puzzleNumber">#0</h2>
       <p class="subtitle">Guess the ThunderPunch! song.</p>
+
       <div class="mode-switch">
-  <button id="dailyModeButton" onclick="setMode('daily')">Daily</button>
-  <button id="endlessModeButton" onclick="setMode('endless')">Endless</button>
-</div>
+        <button id="dailyModeButton" onclick="setMode('daily')">Daily</button>
+        <button id="endlessModeButton" onclick="setMode('endless')">Endless</button>
+      </div>
 
-
-
+      <p id="countdownText" class="bonus-text hero-countdown">Loading...</p>
     </header>
+
     <section id="endlessSetupCard" class="card next-card mode-transition" style="display:none;">
-  <p id="endlessConfigBestText" class="endless-config-best-text">Best: 0</p>
-  <h2>Endless Setup</h2>
+      <p id="endlessConfigBestText" class="endless-config-best-text">Best: 0</p>
+      <h2>Endless Setup</h2>
 
-  <div class="endless-settings-group">
-    <p class="endless-settings-label">Guess Limit</p>
-    <label>
-      <input type="radio" name="endlessGuessLimit" value="6" checked />
-      Normal (6 guesses)
-    </label>
-    <label>
-      <input type="radio" name="endlessGuessLimit" value="1" />
-      Hard (1 guess)
-    </label>
-  </div>
+      <div class="endless-settings-group">
+        <p class="endless-settings-label">Guess Limit</p>
+        <label>
+          <input type="radio" name="endlessGuessLimit" value="6" checked />
+          Normal (6 guesses)
+        </label>
+        <label>
+          <input type="radio" name="endlessGuessLimit" value="1" />
+          Hard (1 guess)
+        </label>
+      </div>
 
-  <div class="endless-settings-group">
-    <p class="endless-settings-label">Clip Start</p>
-    <label>
-      <input type="radio" name="endlessClipStart" value="beginning" checked />
-      Beginning of song
-    </label>
-    <label>
-      <input type="radio" name="endlessClipStart" value="middle" />
-      Somewhere in the middle
-    </label>
-  </div>
+      <div class="endless-settings-group">
+        <p class="endless-settings-label">Clip Start</p>
+        <label>
+          <input type="radio" name="endlessClipStart" value="beginning" checked />
+          Beginning of song
+        </label>
+        <label>
+          <input type="radio" name="endlessClipStart" value="middle" />
+          Somewhere in the middle
+        </label>
+      </div>
 
-  <button onclick="beginConfiguredEndlessRun()">Start Run</button>
-</section>
+      <button onclick="beginConfiguredEndlessRun()">Start Run</button>
+    </section>
+
     <section id="game" class="card mode-transition">
-  <div class="game-top-bar">
-    <button id="restartEndlessTopButton" class="restart-endless-top-button" onclick="confirmRestartEndlessRun()" style="display:none;">
-      ↺ Restart
-    </button>
-  </div>
+      <div class="game-top-bar">
+        <button id="restartEndlessTopButton" class="restart-endless-top-button" onclick="confirmRestartEndlessRun()" style="display:none;">
+          ↺ Restart
+        </button>
+      </div>
 
-  <div class="song-header">
-  <p id="endlessRunCounter" class="endless-run-counter" style="display:none;">Current Run: 0</p>
-  <h2 id="songLabel">Song #1</h2>
-  <p id="roundHint" class="round-hint">Starts at the beginning of the track.</p>
-</div>
+      <div class="song-header">
+        <p id="endlessRunCounter" class="endless-run-counter" style="display:none;">Current Run: 0</p>
+        <h2 id="songLabel">Song #1</h2>
+        <p id="roundHint" class="round-hint">Starts at the beginning of the track.</p>
+      </div>
 
       <div class="controls">
         <button id="playButton" onclick="playClip()">
@@ -87,20 +112,20 @@
       </div>
 
       <div id="waveformWrap" class="waveform-wrap" aria-hidden="true">
-  <div id="waveformFill" class="waveform-fill"></div>
+        <div id="waveformFill" class="waveform-fill"></div>
 
-  <div id="waveformPreviewMarker" class="waveform-preview-marker">
-    <div class="waveform-preview-line"></div>
-    <div id="waveformPreviewLabel" class="waveform-preview-label">1s</div>
-  </div>
+        <div id="waveformPreviewMarker" class="waveform-preview-marker">
+          <div class="waveform-preview-line"></div>
+          <div id="waveformPreviewLabel" class="waveform-preview-label">1s</div>
+        </div>
 
-  <div class="wave-bars">
-    <span></span><span></span><span></span><span></span><span></span>
-    <span></span><span></span><span></span><span></span><span></span>
-    <span></span><span></span><span></span><span></span><span></span>
-    <span></span><span></span><span></span><span></span><span></span>
-  </div>
-</div>
+        <div class="wave-bars">
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
 
       <div class="guess-area">
         <input
@@ -119,26 +144,32 @@
 
       <p id="feedback" class="feedback"></p>
 
-<div id="attemptRow" class="attempt-row" aria-label="Current attempt progress"></div>
+      <div id="attemptRow" class="attempt-row" aria-label="Current attempt progress"></div>
 
-<div id="endlessActionWrap" style="display:none; text-align:center; margin-bottom:16px;">
-  <button id="nextSongButton" onclick="nextEndlessSong()" style="display:none;">Next</button>
-  <button id="restartRunButton" onclick="restartEndlessRun()" style="display:none;">Restart Run</button>
-</div>
+      <div id="endlessActionWrap" style="display:none; text-align:center; margin-bottom:16px;">
+        <button id="nextSongButton" onclick="nextEndlessSong()" style="display:none;">Next</button>
+        <button id="restartRunButton" onclick="restartEndlessRun()" style="display:none;">Restart Run</button>
+      </div>
 
-<div id="artWrap" class="art-wrap" style="display:none;">
-  <img id="albumArt" src="" alt="Album art" />
-</div>
+      <div id="artWrap" class="art-wrap" style="display:none;">
+        <img id="albumArt" src="" alt="Album art" />
+      </div>
     </section>
-    <section id="countdownCard" class="card next-card mode-transition">
 
-      <section id="showResultsSection" class="card next-card" style="display:none;">
-  <h2>Results</h2>
-  <button onclick="openResultsModal()">Show Results</button>
+    <section id="countdownCard" class="mode-transition">
+      <section id="showResultsSection" class="show-results-wrap" style="display:none;">
+  <div class="main-results-actions">
+    <button onclick="openResultsModal()">Show Results</button>
+    <button id="mainBonusButton" onclick="startBonus()" style="display:none;">Play Bonus Song</button>
+  </div>
 </section>
-  <h2>Next Thundle</h2>
-  <p id="countdownText" class="bonus-text">Loading...</p>
-</section>
+    </section>
+
+    <div class="version-footer">
+  <button id="versionButton" class="version-button" type="button" onclick="openWhatsNewModal()">
+    Thundle Version 2.01
+  </button>
+</div>
   </main>
 
   <div id="resultModal" class="modal" style="display:none;">
@@ -183,17 +214,24 @@
       </div>
 
       <div id="shareGrid" class="share-grid"></div>
-      <p id="copiedMessage" class="copied-message"></p>
     </div>
 
     <div class="results-modal-footer modal-actions">
-      <button id="bonusButton" onclick="startBonusFromModal()">Play Bonus Song</button>
-      <button id="nextEndlessButton" onclick="nextEndlessSong()" style="display:none;">
-        Next Song
-      </button>
+  <div class="results-footer-buttons">
+    <button id="bonusButton" onclick="startBonusFromModal()">Play Bonus Song</button>
+
+    <button id="nextEndlessButton" onclick="nextEndlessSong()" style="display:none;">
+      Next Song
+    </button>
+
+    <div class="share-button-stack">
+      <p id="copiedMessage" class="copied-message"></p>
       <button onclick="share()">Share Results</button>
-      <button onclick="closeModal()">Close</button>
     </div>
+
+    <button onclick="closeModal()">Close</button>
+  </div>
+</div>
   </div>
 </div>
 
@@ -231,6 +269,24 @@
 
     <div class="modal-actions">
       <button onclick="closeSettingsModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="whatsNewModal" class="modal" style="display:none;">
+  <div class="modal-content whats-new-modal-content">
+    <h2>What's New?</h2>
+
+    <div class="whats-new-version-buttons">
+      <button type="button" onclick="showWhatsNewVersion('2.01')" id="whatsNewTab201">2.01</button>
+      <button type="button" onclick="showWhatsNewVersion('2.0')" id="whatsNewTab20">2.0</button>
+      <button type="button" onclick="showWhatsNewVersion('1.0')" id="whatsNewTab10">1.0</button>
+    </div>
+
+    <div id="whatsNewContent" class="whats-new-content"></div>
+
+    <div class="modal-actions">
+      <button onclick="closeWhatsNewModal()">Close</button>
     </div>
   </div>
 </div>

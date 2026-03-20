@@ -1,3 +1,4 @@
+let currentMode = "daily"; // "daily" or "endless"
 let songs = [];
 let todaySongs = [];
 
@@ -99,6 +100,121 @@ function updateSettingsUI() {
   if (value) {
     value.textContent = `${Math.round(sfxVolume * 100)}%`;
   }
+}
+
+function toggleTopMenu() {
+  const dropdown = document.getElementById("topMenuDropdown");
+  const button = document.getElementById("menuButton");
+  if (!dropdown || !button) return;
+
+  const isOpen = dropdown.style.display === "block";
+  dropdown.style.display = isOpen ? "none" : "block";
+  button.setAttribute("aria-expanded", isOpen ? "false" : "true");
+}
+
+function closeTopMenu() {
+  const dropdown = document.getElementById("topMenuDropdown");
+  const button = document.getElementById("menuButton");
+  if (!dropdown || !button) return;
+
+  dropdown.style.display = "none";
+  button.setAttribute("aria-expanded", "false");
+}
+
+function openSettingsFromMenu() {
+  closeTopMenu();
+  openSettingsModal();
+}
+
+function openWhatsNewFromMenu() {
+  closeTopMenu();
+  openWhatsNewModal();
+}
+
+const WHATS_NEW_CONTENT = {
+  "2.01": `
+    <h3>Version 2.01</h3>
+    <ul>
+      <li>Added Endless mode improvements and resume behavior fixes.</li>
+      <li>Fixed issues where switching modes could affect Daily progress display.</li>
+      <li>Improved the waveform preview marker so it appears at the correct times.</li>
+      <li>Updated the Results modal layout and share feedback animation.</li>
+      <li>Added better button layout and polish across the results screen.</li>
+      <li>Added a What's New? page.</li>
+      <li>Moved settings and the What's New? page into a hamburger menu.</li>
+      <li>Various bug fixes for audio playback, mode switching, and UI consistency.</li>
+    </ul>
+  `,
+  "2.0": `
+    <h3>Version 2.0</h3>
+    <ul>
+      <li>Added Endless mode.</li>
+      <li>Added configurable Endless settings like guess limit and clip start position.</li>
+      <li>Added Endless run score tracking and best score tracking.</li>
+      <li>Added setup screen for Endless mode.</li>
+      <li>Added sound effects.</li>
+      <li>Added an overall settings menu.</li>
+      <li>Added visual improvements to gameplay flow and interface polish.</li>
+      <li>Improved results presentation and overall game feel.</li>
+    </ul>
+  `,
+  "1.0": `
+    <h3>Version 1.0</h3>
+    <ul>
+      <li>Initial release of Thundle.</li>
+      <li>Daily song guessing mode with ThunderPunch! songs.</li>
+      <li>Autocomplete guessing input.</li>
+      <li>Clip-based guessing progression.</li>
+      <li>Stats tracking including played, win percentage, streak, and best streak.</li>
+      <li>Shareable results grid.</li>
+      <li>Bonus song feature.</li>
+    </ul>
+  `
+};
+
+function openWhatsNewModal() {
+  const modal = document.getElementById("whatsNewModal");
+  if (!modal) return;
+
+  showWhatsNewVersion("2.01");
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+
+  modal.classList.remove("is-open");
+  void modal.offsetWidth;
+
+  requestAnimationFrame(() => {
+    modal.classList.add("is-open");
+  });
+}
+
+function closeWhatsNewModal() {
+  const modal = document.getElementById("whatsNewModal");
+  if (!modal) return;
+
+  modal.classList.remove("is-open");
+
+  setTimeout(() => {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  }, 200);
+}
+
+function showWhatsNewVersion(version) {
+  const content = document.getElementById("whatsNewContent");
+  if (!content) return;
+
+  content.innerHTML = WHATS_NEW_CONTENT[version] || "<p>No update notes yet.</p>";
+
+  const tab201 = document.getElementById("whatsNewTab201");
+  const tab20 = document.getElementById("whatsNewTab20");
+  const tab10 = document.getElementById("whatsNewTab10");
+
+  [tab201, tab20, tab10].forEach(btn => btn?.classList.remove("active"));
+
+  if (version === "2.01" && tab201) tab201.classList.add("active");
+  if (version === "2.0" && tab20) tab20.classList.add("active");
+  if (version === "1.0" && tab10) tab10.classList.add("active");
 }
 
 function openSettingsModal() {
@@ -461,8 +577,20 @@ function setMode(mode) {
   }
 
   if (mode === "endless") {
-    saveProgress();
+  const hasSavedEndless = getEndlessProgress().endlessCurrentSong;
 
+  if (hasSavedEndless) {
+    animateModeSwitch(
+      [gameCard],
+      [endlessSetupCard, nextCard],
+      () => {
+        gameMode = "endless";
+        updateModeButtons();
+        updateEndlessSetupBestText();
+        loadEndlessProgressIfAvailable();
+      }
+    );
+  } else {
     animateModeSwitch(
       [endlessSetupCard],
       [gameCard, nextCard],
@@ -470,11 +598,6 @@ function setMode(mode) {
         gameMode = "endless";
         updateModeButtons();
         updateEndlessSetupBestText();
-
-        if (loadEndlessProgressIfAvailable()) {
-          return;
-        }
-
         resetRoundState();
         document.getElementById("puzzleNumber").innerText = "Endless";
         updateEndlessRunCounter();
@@ -482,6 +605,7 @@ function setMode(mode) {
       }
     );
   }
+}
 }
 
 function startEndlessMode() {
@@ -500,10 +624,10 @@ function startEndlessMode() {
   updateEndlessRestartButton();
   updateWaveformPreviewMarker();
 
-  const nextCard = document.getElementById("countdownText")?.parentElement;
-  if (nextCard) {
-    nextCard.style.display = "none";
-  }
+  const nextCard = document.getElementById("countdownCard");
+if (nextCard) {
+  nextCard.style.display = "none";
+}
 
   preloadedAudio = [null, null];
   if (endlessCurrentSong?.file) {
@@ -538,6 +662,11 @@ function resetRoundState() {
   document.getElementById("suggestions").innerHTML = "";
   document.getElementById("artWrap").style.display = "none";
   document.getElementById("showResultsSection").style.display = "none";
+
+  const mainBonusButton = document.getElementById("mainBonusButton");
+if (mainBonusButton) {
+  mainBonusButton.style.display = "none";
+}
 
   hideEndlessActionButtons();
   hideWaveformPreviewMarker();
@@ -611,7 +740,14 @@ function stopCurrentAudio() {
     currentAudio.currentTime = 0;
     currentAudio = null;
   }
+
   stopWaveform();
+  setPlayButtonState(false);
+
+  const button = document.getElementById("playButton");
+  if (button) {
+    button.disabled = false;
+  }
 }
 
 function playClip() {
@@ -1186,17 +1322,29 @@ function finishCurrentRound() {
   saveProgress();
 
   if (songIndex === 0) {
-    prepareResults(false);
-    document.getElementById("showResultsSection").style.display = "block";
-    openResultsModal();
-  } else {
-    gameFinished = true;
-    saveProgress();
-    updateStatsFinal();
-    prepareResults(true);
-    document.getElementById("showResultsSection").style.display = "block";
-    openResultsModal();
+  prepareResults(false);
+  document.getElementById("showResultsSection").style.display = "block";
+
+  const mainBonusButton = document.getElementById("mainBonusButton");
+  if (mainBonusButton) {
+    mainBonusButton.style.display = didWinSong(0) ? "inline-block" : "none";
   }
+
+  openResultsModal();
+} else {
+  gameFinished = true;
+  saveProgress();
+  updateStatsFinal();
+  prepareResults(true);
+  document.getElementById("showResultsSection").style.display = "block";
+
+  const mainBonusButton = document.getElementById("mainBonusButton");
+  if (mainBonusButton) {
+    mainBonusButton.style.display = "none";
+  }
+
+  openResultsModal();
+}
 }
 
 function renderAttemptRow() {
@@ -1264,6 +1412,11 @@ function startBonus() {
   document.getElementById("suggestions").innerHTML = "";
   document.getElementById("artWrap").style.display = "none";
   document.getElementById("showResultsSection").style.display = "none";
+
+  const mainBonusButton = document.getElementById("mainBonusButton");
+if (mainBonusButton) {
+  mainBonusButton.style.display = "none";
+}
 
   hideWaveformPreviewMarker();
   renderAttemptRow();
@@ -1601,9 +1754,8 @@ function loadEndlessProgressIfAvailable() {
   gameMode = "endless";
 
   const endlessSetupCard = document.getElementById("endlessSetupCard");
-  const gameCard = document.getElementById("game");
-  const nextCard = document.getElementById("countdownText")?.parentElement;
-
+const gameCard = document.getElementById("game");
+const nextCard = document.getElementById("countdownCard");
   if (endlessSetupCard) {
     endlessSetupCard.style.display = "none";
   }
@@ -1704,11 +1856,16 @@ function loadProgressIfAvailable() {
   );
 
   if (finishedMain && !bonusStarted) {
-    document.getElementById("playButton").disabled = true;
-    document.getElementById("guessInput").disabled = true;
-    document.getElementById("guessButton").disabled = true;
-    document.getElementById("showResultsSection").style.display = "block";
-  } else if (songIndex === 1 && !gameFinished) {
+  document.getElementById("playButton").disabled = true;
+  document.getElementById("guessInput").disabled = true;
+  document.getElementById("guessButton").disabled = true;
+  document.getElementById("showResultsSection").style.display = "block";
+
+  const mainBonusButton = document.getElementById("mainBonusButton");
+  if (mainBonusButton) {
+    mainBonusButton.style.display = didWinSong(0) ? "inline-block" : "none";
+  }
+} else if (songIndex === 1 && !gameFinished) {
     document.getElementById("guessInput").disabled = false;
     document.getElementById("guessButton").disabled = false;
     document.getElementById("playButton").disabled = false;
@@ -1974,6 +2131,23 @@ ${link}`;
   return text;
 }
 
+function showShareStatus(message) {
+  const el = document.getElementById("copiedMessage");
+  if (!el) return;
+
+  el.textContent = message;
+  el.classList.remove("show");
+
+  void el.offsetWidth;
+
+  el.classList.add("show");
+
+  clearTimeout(showShareStatus._timer);
+  showShareStatus._timer = setTimeout(() => {
+    el.classList.remove("show");
+  }, 1600);
+}
+
 async function share() {
   const textForNativeShare = buildShareText(false);
   const textForClipboard = buildShareText(true);
@@ -1987,23 +2161,23 @@ async function share() {
   try {
     if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
       await navigator.share(shareData);
-      document.getElementById("copiedMessage").innerText = "Shared!";
+      showShareStatus("Shared!");
       return;
     }
 
     await navigator.clipboard.writeText(textForClipboard);
-    document.getElementById("copiedMessage").innerText = "Copied!";
+    showShareStatus("Copied!");
   } catch (error) {
     if (error && error.name === "AbortError") {
-      document.getElementById("copiedMessage").innerText = "Share canceled";
+      showShareStatus("Share canceled");
       return;
     }
 
     try {
       await navigator.clipboard.writeText(textForClipboard);
-      document.getElementById("copiedMessage").innerText = "Copied!";
+      showShareStatus("Copied!");
     } catch {
-      document.getElementById("copiedMessage").innerText = "Could not share";
+      showShareStatus("Could not share");
     }
   }
 }
@@ -2047,6 +2221,7 @@ function restartEndlessRun() {
 
   const endlessSetupCard = document.getElementById("endlessSetupCard");
   const gameCard = document.getElementById("game");
+  const nextCard = document.getElementById("countdownCard");
 
   endlessScore = 0;
   gameFinished = false;
@@ -2067,10 +2242,12 @@ function restartEndlessRun() {
     endlessSetupCard.style.display = "block";
   }
 
+  if (nextCard) {
+  nextCard.style.display = "none";
+}
+
   document.getElementById("puzzleNumber").innerText = "Endless";
   updateEndlessSetupBestText();
-  
-  saveProgress();
 }
 
 function updateEndlessRunCounter(newBestAchieved = false) {
@@ -2126,6 +2303,7 @@ function beginConfiguredEndlessRun() {
 
   const endlessSetupCard = document.getElementById("endlessSetupCard");
   const gameCard = document.getElementById("game");
+  const nextCard = document.getElementById("countdownCard");
 
   if (endlessSetupCard) {
     endlessSetupCard.style.display = "none";
@@ -2133,6 +2311,10 @@ function beginConfiguredEndlessRun() {
 
   if (gameCard) {
     gameCard.style.display = "block";
+  }
+
+  if (nextCard) {
+    nextCard.style.display = "none";
   }
 
   startEndlessMode();
@@ -2201,6 +2383,9 @@ window.addEventListener("click", (event) => {
   const restartModal = document.getElementById("restartConfirmModal");
   const resultsModal = document.getElementById("resultModal");
   const settingsModal = document.getElementById("settingsModal");
+  const whatsNewModal = document.getElementById("whatsNewModal");
+  const topMenu = document.getElementById("topMenuDropdown");
+  const menuButton = document.getElementById("menuButton");
 
   if (event.target === restartModal) {
     closeRestartConfirmModal();
@@ -2212,6 +2397,19 @@ window.addEventListener("click", (event) => {
 
   if (event.target === settingsModal) {
     closeSettingsModal();
+  }
+
+  if (event.target === whatsNewModal) {
+    closeWhatsNewModal();
+  }
+
+  if (
+    topMenu &&
+    menuButton &&
+    !topMenu.contains(event.target) &&
+    !menuButton.contains(event.target)
+  ) {
+    closeTopMenu();
   }
 });
 
