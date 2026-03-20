@@ -22,30 +22,85 @@
 <body>
   <main class="page">
     <header class="hero">
+      <button id="settingsButton" class="settings-button" type="button" onclick="openSettingsModal()" aria-label="Open settings">
+        ⚙
+      </button>
       <h1>⚡ THUNDLE ⚡</h1>
       <h2 id="puzzleNumber">#0</h2>
       <p class="subtitle">Guess the ThunderPunch! song.</p>
-    </header>
+      <div class="mode-switch">
+  <button id="dailyModeButton" onclick="setMode('daily')">Daily</button>
+  <button id="endlessModeButton" onclick="setMode('endless')">Endless</button>
+</div>
 
-    <section id="game" class="card">
-      <div class="song-header">
-        <h2 id="songLabel">Song #1</h2>
-        <p id="roundHint" class="round-hint">Starts at the beginning of the track.</p>
-      </div>
+
+
+    </header>
+    <section id="endlessSetupCard" class="card next-card mode-transition" style="display:none;">
+  <p id="endlessConfigBestText" class="endless-config-best-text">Best: 0</p>
+  <h2>Endless Setup</h2>
+
+  <div class="endless-settings-group">
+    <p class="endless-settings-label">Guess Limit</p>
+    <label>
+      <input type="radio" name="endlessGuessLimit" value="6" checked />
+      Normal (6 guesses)
+    </label>
+    <label>
+      <input type="radio" name="endlessGuessLimit" value="1" />
+      Hard (1 guess)
+    </label>
+  </div>
+
+  <div class="endless-settings-group">
+    <p class="endless-settings-label">Clip Start</p>
+    <label>
+      <input type="radio" name="endlessClipStart" value="beginning" checked />
+      Beginning of song
+    </label>
+    <label>
+      <input type="radio" name="endlessClipStart" value="middle" />
+      Somewhere in the middle
+    </label>
+  </div>
+
+  <button onclick="beginConfiguredEndlessRun()">Start Run</button>
+</section>
+    <section id="game" class="card mode-transition">
+  <div class="game-top-bar">
+    <button id="restartEndlessTopButton" class="restart-endless-top-button" onclick="confirmRestartEndlessRun()" style="display:none;">
+      ↺ Restart
+    </button>
+  </div>
+
+  <div class="song-header">
+  <p id="endlessRunCounter" class="endless-run-counter" style="display:none;">Current Run: 0</p>
+  <h2 id="songLabel">Song #1</h2>
+  <p id="roundHint" class="round-hint">Starts at the beginning of the track.</p>
+</div>
 
       <div class="controls">
-        <button id="playButton" onclick="playClip()">▶ Play Clip</button>
+        <button id="playButton" onclick="playClip()">
+          <span id="playIcon" class="media-icon play"></span>
+          <span id="playButtonLabel">Play Clip</span>
+        </button>
       </div>
 
       <div id="waveformWrap" class="waveform-wrap" aria-hidden="true">
-        <div id="waveformFill" class="waveform-fill"></div>
-        <div class="wave-bars">
-          <span></span><span></span><span></span><span></span><span></span>
-          <span></span><span></span><span></span><span></span><span></span>
-          <span></span><span></span><span></span><span></span><span></span>
-          <span></span><span></span><span></span><span></span><span></span>
-        </div>
-      </div>
+  <div id="waveformFill" class="waveform-fill"></div>
+
+  <div id="waveformPreviewMarker" class="waveform-preview-marker">
+    <div class="waveform-preview-line"></div>
+    <div id="waveformPreviewLabel" class="waveform-preview-label">1s</div>
+  </div>
+
+  <div class="wave-bars">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+</div>
 
       <div class="guess-area">
         <input
@@ -64,13 +119,18 @@
 
       <p id="feedback" class="feedback"></p>
 
-      <div id="attemptRow" class="attempt-row" aria-label="Current attempt progress"></div>
+<div id="attemptRow" class="attempt-row" aria-label="Current attempt progress"></div>
 
-      <div id="artWrap" class="art-wrap" style="display:none;">
-        <img id="albumArt" src="" alt="Album art" />
-      </div>
+<div id="endlessActionWrap" style="display:none; text-align:center; margin-bottom:16px;">
+  <button id="nextSongButton" onclick="nextEndlessSong()" style="display:none;">Next</button>
+  <button id="restartRunButton" onclick="restartEndlessRun()" style="display:none;">Restart Run</button>
+</div>
+
+<div id="artWrap" class="art-wrap" style="display:none;">
+  <img id="albumArt" src="" alt="Album art" />
+</div>
     </section>
-    <section class="card next-card">
+    <section id="countdownCard" class="card next-card mode-transition">
 
       <section id="showResultsSection" class="card next-card" style="display:none;">
   <h2>Results</h2>
@@ -83,50 +143,94 @@
 
   <div id="resultModal" class="modal" style="display:none;">
   <div class="modal-content">
-    <h2>Results</h2>
-
-    <p id="resultsTitle" class="stats-text"></p>
-    <p id="stats" class="stats-text"></p>
-    <p id="modalCountdownText" class="stats-text"></p>
-
-    <div id="resultsSongsWrap" class="results-songs-wrap">
-  <div class="result-song-card">
-    <h3>Main Song</h3>
-    <div class="result-art-button-wrap">
-      <img id="resultAlbumArt0" class="result-album-art" src="" alt="Main song album art" />
-      <button id="resultPlayButton0" class="result-art-play-button" onclick="toggleResultSong(0)">▶</button>
+    <div class="results-modal-header">
+      <h2>Results</h2>
+      <p id="resultsTitle" class="stats-text"></p>
+      <p id="stats" class="stats-text"></p>
+      <p id="modalCountdownText" class="stats-text"></p>
     </div>
-    <p id="resultSongTitle0" class="result-song-title"></p>
-    <a id="resultSpotifyLink0" class="spotify-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" aria-label="Listen on Spotify">
-  <img src="branding/spotify-logo.png" alt="Spotify" class="spotify-logo" />
-</a>
-  </div>
 
-  <div id="bonusResultCard" class="result-song-card" style="display:none;">
-    <h3>Bonus Song</h3>
-    <div class="result-art-button-wrap">
-      <img id="resultAlbumArt1" class="result-album-art" src="" alt="Bonus song album art" />
-      <button id="resultPlayButton1" class="result-art-play-button" onclick="toggleResultSong(1)">▶</button>
+    <div class="results-modal-body">
+      <div id="resultsSongsWrap" class="results-songs-wrap">
+        <div class="result-song-card">
+          <h3>Main Song</h3>
+          <div class="result-art-button-wrap">
+            <img id="resultAlbumArt0" class="result-album-art" src="" alt="Main song album art" />
+            <button id="resultPlayButton0" class="result-art-play-button" onclick="toggleResultSong(0)">▶</button>
+          </div>
+          <p id="resultSongTitle0" class="result-song-title"></p>
+          <a id="resultSpotifyLink0" class="spotify-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" aria-label="Listen on Spotify">
+            <img src="branding/spotify-logo.png" alt="Spotify" class="spotify-logo" />
+          </a>
+        </div>
+
+        <div id="bonusResultCard" class="result-song-card" style="display:none;">
+          <h3>Bonus Song</h3>
+          <div class="result-art-button-wrap">
+            <img id="resultAlbumArt1" class="result-album-art" src="" alt="Bonus song album art" />
+            <button id="resultPlayButton1" class="result-art-play-button" onclick="toggleResultSong(1)">▶</button>
+          </div>
+          <p id="resultSongTitle1" class="result-song-title"></p>
+          <a id="resultSpotifyLink1" class="spotify-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" aria-label="Listen on Spotify">
+            <img src="branding/spotify-logo.png" alt="Spotify" class="spotify-logo" />
+          </a>
+        </div>
+      </div>
+
+      <div class="distribution">
+        <h3>Guess Distribution</h3>
+        <div id="distributionChart"></div>
+      </div>
+
+      <div id="shareGrid" class="share-grid"></div>
+      <p id="copiedMessage" class="copied-message"></p>
     </div>
-    <p id="resultSongTitle1" class="result-song-title"></p>
-    <a id="resultSpotifyLink1" class="spotify-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" aria-label="Listen on Spotify">
-  <img src="branding/spotify-logo.png" alt="Spotify" class="spotify-logo" />
-</a>
+
+    <div class="results-modal-footer modal-actions">
+      <button id="bonusButton" onclick="startBonusFromModal()">Play Bonus Song</button>
+      <button id="nextEndlessButton" onclick="nextEndlessSong()" style="display:none;">
+        Next Song
+      </button>
+      <button onclick="share()">Share Results</button>
+      <button onclick="closeModal()">Close</button>
+    </div>
   </div>
 </div>
 
-    <div class="distribution">
-      <h3>Guess Distribution</h3>
-      <div id="distributionChart"></div>
-    </div>
-
-    <div id="shareGrid" class="share-grid"></div>
-    <p id="copiedMessage" class="copied-message"></p>
+<div id="restartConfirmModal" class="modal" style="display:none;">
+  <div class="modal-content restart-confirm-modal-content">
+    <h2>Restart Endless Run?</h2>
+    <p class="stats-text">Your best will be saved, but your current progress in this run will be lost.</p>
 
     <div class="modal-actions">
-      <button id="bonusButton" onclick="startBonusFromModal()">Play Bonus Song</button>
-      <button onclick="share()">Share Results</button>
-      <button onclick="closeModal()">Close</button>
+      <button onclick="closeRestartConfirmModal()">Cancel</button>
+      <button class="danger-button" onclick="confirmRestartEndlessRunNow()">Restart Run</button>
+    </div>
+  </div>
+</div>
+
+<div id="settingsModal" class="modal" style="display:none;">
+  <div class="modal-content settings-modal-content">
+    <h2>Settings</h2>
+
+    <div class="settings-group">
+      <label for="sfxVolumeSlider" class="settings-label">Sound Effects Volume</label>
+      <div class="settings-row">
+        <input
+          id="sfxVolumeSlider"
+          type="range"
+          min="0"
+          max="100"
+          value="100"
+          step="1"
+          oninput="setSfxVolume(this.value)"
+        />
+        <span id="sfxVolumeValue" class="settings-value">70%</span>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button onclick="closeSettingsModal()">Close</button>
     </div>
   </div>
 </div>
