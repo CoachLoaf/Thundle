@@ -36,23 +36,61 @@
   </button>
 
   <div id="topMenuDropdown" class="top-menu-dropdown" style="display:none;">
-    <button type="button" class="top-menu-item" onclick="openSettingsFromMenu()">
-      <span class="top-menu-icon">⚙</span>
-      <span>Settings</span>
-    </button>
+  <button type="button" class="top-menu-item" onclick="openSettingsFromMenu()">
+    <span class="top-menu-icon">⚙</span>
+    <span>Settings</span>
+  </button>
 
-    <button type="button" class="top-menu-item" onclick="openWhatsNewFromMenu()">
-      <span class="top-menu-icon">✨</span>
-      <span>What's New?</span>
-    </button>
+  <button type="button" class="top-menu-item" onclick="openAchievementsFromMenu()">
+    <span class="top-menu-icon">🏆</span>
+    <span>Achievements</span>
+  </button>
+
+  <button type="button" class="top-menu-item" onclick="openAboutModal()">
+  <span class="top-menu-icon">ℹ️</span>
+  <span>About</span>
+</button>
+
+  <div class="top-menu-divider"></div>
+
+  <div id="accountStatusText" class="account-status-text">Not signed in</div>
+<div id="syncStatusText" class="sync-status-text">No cloud sync</div>
+
+<button
+  id="syncNowMenuButton"
+  type="button"
+  class="top-menu-item"
+  onclick="manualCloudSync()"
+  style="display:none;"
+>
+  <span class="top-menu-icon">☁</span>
+  <span>Sync Now</span>
+</button>
+
+<button type="button" class="top-menu-item" onclick="openAuthModal()">
+  <span class="top-menu-icon">👤</span>
+  <span id="accountButtonText">Sign Up / Log In</span>
+</button>
+
+<button
+  id="logoutMenuButton"
+  type="button"
+  class="top-menu-item"
+  onclick="logoutAccount()"
+  style="display:none;"
+>
+  <span class="top-menu-icon">↩</span>
+  <span>Log Out</span>
+</button>
   </div>
 </div>
 
-      <h1>⚡ THUNDLE ⚡</h1>
+      <h1 class="game-logo" onclick="triggerLogoZap(this, event)">THUNDLE</h1>
       <h2 id="puzzleNumber">#0</h2>
       <p class="subtitle">Guess the ThunderPunch! song.</p>
+      <p id="cloudBadge" class="cloud-badge">Playing as guest</p>
 
-      <div class="mode-switch">
+  <div class="mode-switch">
         <button id="dailyModeButton" onclick="setMode('daily')">Daily</button>
         <button id="endlessModeButton" onclick="setMode('endless')">Endless</button>
       </div>
@@ -127,20 +165,20 @@
         </div>
       </div>
 
-      <div class="guess-area">
-        <input
-          id="guessInput"
-          type="text"
-          placeholder="Guess song"
-          autocomplete="off"
-          aria-label="Guess song title"
-        />
-        <div id="suggestions" class="suggestions"></div>
-      </div>
+      <div class="guess-row">
+  <div class="guess-area">
+    <input
+      id="guessInput"
+      type="text"
+      placeholder="Guess song"
+      autocomplete="off"
+      aria-label="Guess song title"
+    />
+    <div id="suggestions" class="suggestions"></div>
+  </div>
 
-      <div class="actions">
-        <button id="guessButton" onclick="submitGuess()">Guess</button>
-      </div>
+  <button id="guessButton" onclick="submitGuess()">Guess</button>
+</div>
 
       <p id="feedback" class="feedback"></p>
 
@@ -152,8 +190,25 @@
       </div>
 
       <div id="artWrap" class="art-wrap" style="display:none;">
-        <img id="albumArt" src="" alt="Album art" />
-      </div>
+  <p id="revealedSongTitle" class="revealed-song-title"></p>
+
+  <div class="result-art-button-wrap main-reveal-art-wrap">
+    <img id="albumArt" src="" alt="Album art" />
+    <button id="mainRevealPlayButton" class="result-art-play-button" onclick="toggleMainRevealSong()">▶</button>
+  </div>
+
+  <a
+    id="mainSpotifyLink"
+    class="spotify-link"
+    href="#"
+    target="_blank"
+    rel="noopener noreferrer"
+    style="display:none;"
+    aria-label="Listen on Spotify"
+  >
+    <img src="branding/spotify-logo.png" alt="Spotify" class="spotify-logo" />
+  </a>
+</div>
     </section>
 
     <section id="countdownCard" class="mode-transition">
@@ -167,7 +222,7 @@
 
     <div class="version-footer">
   <button id="versionButton" class="version-button" type="button" onclick="openWhatsNewModal()">
-    Thundle Version 2.01
+    Thundle Version 2.1
   </button>
 </div>
   </main>
@@ -190,6 +245,7 @@
             <button id="resultPlayButton0" class="result-art-play-button" onclick="toggleResultSong(0)">▶</button>
           </div>
           <p id="resultSongTitle0" class="result-song-title"></p>
+          <div id="resultGuessRow0" class="result-guess-row-wrap"></div>
           <a id="resultSpotifyLink0" class="spotify-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" aria-label="Listen on Spotify">
             <img src="branding/spotify-logo.png" alt="Spotify" class="spotify-logo" />
           </a>
@@ -202,6 +258,7 @@
             <button id="resultPlayButton1" class="result-art-play-button" onclick="toggleResultSong(1)">▶</button>
           </div>
           <p id="resultSongTitle1" class="result-song-title"></p>
+          <div id="resultGuessRow1" class="result-guess-row-wrap"></div>
           <a id="resultSpotifyLink1" class="spotify-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;" aria-label="Listen on Spotify">
             <img src="branding/spotify-logo.png" alt="Spotify" class="spotify-logo" />
           </a>
@@ -213,7 +270,7 @@
         <div id="distributionChart"></div>
       </div>
 
-      <div id="shareGrid" class="share-grid"></div>
+      <div id="resultGuessRows" class="result-guess-rows"></div>
     </div>
 
     <div class="results-modal-footer modal-actions">
@@ -242,7 +299,13 @@
 
     <div class="modal-actions">
       <button onclick="closeRestartConfirmModal()">Cancel</button>
-      <button class="danger-button" onclick="confirmRestartEndlessRunNow()">Restart Run</button>
+      <button
+  id="devResetButton"
+  class="danger-button"
+  onclick="devResetAccountProgress()"
+>
+  Dev Reset Progress
+</button>
     </div>
   </div>
 </div>
@@ -278,6 +341,7 @@
     <h2>What's New?</h2>
 
     <div class="whats-new-version-buttons">
+      <button type="button" onclick="showWhatsNewVersion('2.1')" id="whatsNewTab21">2.1</button>
       <button type="button" onclick="showWhatsNewVersion('2.01')" id="whatsNewTab201">2.01</button>
       <button type="button" onclick="showWhatsNewVersion('2.0')" id="whatsNewTab20">2.0</button>
       <button type="button" onclick="showWhatsNewVersion('1.0')" id="whatsNewTab10">1.0</button>
@@ -289,8 +353,277 @@
       <button onclick="closeWhatsNewModal()">Close</button>
     </div>
   </div>
+
 </div>
 
-  <script src="game.js"></script>
+<div id="achievementsModal" class="modal" style="display:none;">
+  <div class="modal-content achievements-modal-content">
+    <h2>Achievements</h2>
+    <p id="achievementsSummary" class="stats-text">0/0 unlocked</p>
+    <div id="achievementsList" class="achievements-list"></div>
+    <div class="modal-actions">
+      <button onclick="closeAchievementsModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="aboutModal" class="modal" style="display:none;">
+  <div class="modal-content about-modal-content">
+    <div class="about-header">
+      <h2>About Thundle</h2>
+      <p class="about-subtitle">Music game • band hub • roadmap • updates</p>
+      <p class="about-version">Version 2.1</p>
+    </div>
+
+    <div class="about-cards-grid">
+      <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutBandSection')">
+        <span class="about-nav-icon">🎸</span>
+        <span>Band</span>
+      </button>
+
+      <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutDevSection')">
+        <span class="about-nav-icon">👨‍💻</span>
+        <span>Developer</span>
+      </button>
+
+      <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutHowToPlaySection')">
+        <span class="about-nav-icon">🎯</span>
+        <span>How to Play</span>
+      </button>
+
+      <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutAchievementsSection')">
+        <span class="about-nav-icon">🏆</span>
+        <span>Achievements</span>
+      </button>
+
+      <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutAccountsSection')">
+        <span class="about-nav-icon">☁️</span>
+        <span>Accounts & Saves</span>
+      </button>
+
+      <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutComingSoonSection')">
+        <span class="about-nav-icon">🚧</span>
+        <span>Coming Soon</span>
+      </button>
+
+      <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutWhatsNewSection')">
+        <span class="about-nav-icon">📰</span>
+        <span>What's New</span>
+      </button>
+
+      <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutPrivacySection')">
+        <span class="about-nav-icon">🔐</span>
+        <span>Privacy</span>
+      </button>
+
+      <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutFeedbackSection')">
+        <span class="about-nav-icon">📬</span>
+        <span>Feedback</span>
+      </button>
+    </div>
+
+    <div class="about-sections-wrap">
+      <section id="aboutBandSection" class="about-section-panel is-open">
+        <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutBandSection')">
+          <span>🎸 About the Band</span>
+          <span class="about-section-chevron">⌄</span>
+        </button>
+        <div class="about-section-body">
+          <p>ThunderPunch! is a band built on energy, fun, weirdness, and songs that don’t take themselves too seriously. Thundle is built entirely around the band’s catalog, turning the music into a daily guessing game.</p>
+          <p>Every clip you hear in Thundle comes from a real ThunderPunch! song. The better you know the catalog, the stronger your streak will be.</p>
+          <div class="about-link-row">
+            <a
+              class="about-link-button"
+              href="https://open.spotify.com/artist/7xYTweTKRO2FM6Y6gZ9Fwa?si=FMMIwtz5TG2RB5KCT792_A"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Listen on Spotify
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section id="aboutDevSection" class="about-section-panel">
+        <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutDevSection')">
+          <span>👨‍💻 About the Developer</span>
+          <span class="about-section-chevron">⌄</span>
+        </button>
+        <div class="about-section-body">
+          <p>Thundle was created by Jacob Hatfield — musician, teacher, and developer — as a way to combine original music, games, and personality into one weird little daily ritual.</p>
+          <p>The goal is simple: make something fun, replayable, and unmistakably ThunderPunch!.</p>
+        </div>
+      </section>
+
+      <section id="aboutHowToPlaySection" class="about-section-panel">
+        <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutHowToPlaySection')">
+          <span>🎯 How to Play</span>
+          <span class="about-section-chevron">⌄</span>
+        </button>
+        <div class="about-section-body">
+          <ul class="about-list">
+            <li>Press <strong>Play Clip</strong> to hear a short section of the song.</li>
+            <li>Guess the song title using the input box.</li>
+            <li>Each wrong guess gives you a longer clip.</li>
+            <li>Daily mode gives you a main song and, if you clear it, a bonus song.</li>
+            <li>Endless mode lets you chase high scores and hardcore achievements.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="aboutAchievementsSection" class="about-section-panel">
+        <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutAchievementsSection')">
+          <span>🏆 Achievements</span>
+          <span class="about-section-chevron">⌄</span>
+        </button>
+        <div class="about-section-body">
+          <p>Achievements reward all kinds of progress: streaks, Endless runs, special moments, hidden secrets, and full-catalog mastery.</p>
+          <ul class="about-list">
+            <li><strong>Common</strong> to <strong>Legendary</strong> rarities</li>
+            <li>Some achievements are hidden until you unlock them</li>
+            <li>Major progress achievements can be awarded retroactively based on your existing save data</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="aboutAccountsSection" class="about-section-panel">
+        <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutAccountsSection')">
+          <span>☁️ Accounts & Saves</span>
+          <span class="about-section-chevron">⌄</span>
+        </button>
+        <div class="about-section-body">
+          <p>You can play as a guest or create an account.</p>
+          <ul class="about-list">
+            <li><strong>Guest:</strong> progress saves only in your current browser</li>
+            <li><strong>Account:</strong> syncs stats, achievements, daily progress, and Endless data across devices</li>
+            <li>If cloud and local progress differ, Thundle tries to keep the newer save</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="aboutComingSoonSection" class="about-section-panel">
+        <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutComingSoonSection')">
+          <span>🚧 Coming Soon</span>
+          <span class="about-section-chevron">⌄</span>
+        </button>
+        <div class="about-section-body">
+          <ul class="about-list">
+            <li>ThunderCoins + shop</li>
+            <li>Unlockable themes</li>
+            <li>More achievements</li>
+            <li>Leaderboard ideas</li>
+            <li>More profile/account polish</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="aboutWhatsNewSection" class="about-section-panel">
+        <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutWhatsNewSection')">
+          <span>📰 What's New</span>
+          <span class="about-section-chevron">⌄</span>
+        </button>
+        <div class="about-section-body">
+          <div class="about-whats-new-tabs">
+            <button type="button" onclick="showAboutWhatsNewVersion('2.1')" id="aboutWhatsNewTab21">2.1</button>
+            <button type="button" onclick="showAboutWhatsNewVersion('2.01')" id="aboutWhatsNewTab201">2.01</button>
+            <button type="button" onclick="showAboutWhatsNewVersion('2.0')" id="aboutWhatsNewTab20">2.0</button>
+            <button type="button" onclick="showAboutWhatsNewVersion('1.0')" id="aboutWhatsNewTab10">1.0</button>
+        </div>
+          <div id="aboutWhatsNewContent" class="about-whats-new-content"></div>
+        </div>
+      </section>
+
+      <section id="aboutPrivacySection" class="about-section-panel">
+        <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutPrivacySection')">
+          <span>🔐 Privacy Policy</span>
+          <span class="about-section-chevron">⌄</span>
+        </button>
+        <div class="about-section-body">
+          <p>Thundle stores gameplay progress locally in your browser and, if you create an account, in cloud save storage tied to your account.</p>
+          <p>Your account email is used only for authentication. Thundle does not sell your personal data.</p>
+        </div>
+      </section>
+
+      <section id="aboutFeedbackSection" class="about-section-panel">
+        <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutFeedbackSection')">
+          <span>📬 Feedback</span>
+          <span class="about-section-chevron">⌄</span>
+        </button>
+        <div class="about-section-body">
+          <p>Found a bug? Have a feature idea? Want to yell about your favorite ThunderPunch! song?</p>
+          <p>Email me: jakehatfield820@gmail.com</p>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-actions">
+      <button onclick="closeAboutModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="authModal" class="modal" style="display:none;">
+  <div class="modal-content auth-modal-content">
+    <h2>Account</h2>
+
+    <div class="auth-tabs">
+      <button id="authTabLogin" type="button" onclick="switchAuthMode('login')">Log In</button>
+      <button id="authTabSignup" type="button" onclick="switchAuthMode('signup')">Sign Up</button>
+    </div>
+
+    <div class="auth-form">
+      <label id="authUsernameLabel" class="settings-label" for="authUsername">Username</label>
+      <input id="authUsername" type="text" placeholder="Username" />
+
+      <label class="settings-label" for="authEmail">Email</label>
+      <input id="authEmail" type="email" placeholder="Email" />
+
+      <label class="settings-label" for="authPassword">Password</label>
+      <input id="authPassword" type="password" placeholder="Password" />
+
+      <p id="authMessage" class="auth-message"></p>
+    </div>
+
+    <div class="modal-actions auth-modal-actions">
+  <button id="authSubmitButton" onclick="submitAuth()">Log In</button>
+  <button onclick="closeAuthModal()">Close</button>
+  <button class="danger-button" onclick="devResetAccountProgress()">Dev Reset Progress</button>
+</div>
+  </div>
+</div>
+
+<div id="welcomeModal" class="modal" style="display:none;">
+  <div class="modal-content welcome-modal-content">
+    <h2>Welcome to Thundle!</h2>
+
+    <div class="welcome-copy">
+      <p><strong>How to play:</strong> Press Play Clip, listen carefully, and guess the ThunderPunch! song title. Each wrong guess gives you a longer clip.</p>
+
+      <p><strong>Achievements:</strong> Unlock achievements for streaks, Endless milestones, special moments, and secret discoveries.</p>
+
+      <p><strong>Accounts & saves:</strong> Create an account to sync your progress, achievements, stats, and Endless records across devices. You can also keep playing as a guest.</p>
+    </div>
+
+    <div class="welcome-actions">
+      <button onclick="beginWelcomeAuth()">Log In / Sign Up</button>
+      <button onclick="continueAsGuest()">Continue as Guest</button>
+    </div>
+  </div>
+</div>
+
+<div id="welcomeBackBanner" class="welcome-back-banner" aria-live="polite"></div>
+<div id="sparkleContainer" class="sparkle-container"></div>
+
+<div id="achievementToast" class="achievement-toast" aria-live="polite" aria-atomic="true">
+  <img id="achievementToastArt" class="achievement-toast-art" src="" alt="" />
+  <div class="achievement-toast-copy">
+    <p class="achievement-toast-label">Achievement Unlocked!</p>
+    <p id="achievementToastTitle" class="achievement-toast-title"></p>
+    <p id="achievementToastDescription" class="achievement-toast-description"></p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="game.js"></script>
 </body>
 </html>

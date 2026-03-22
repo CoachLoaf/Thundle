@@ -1,15 +1,97 @@
 let currentMode = "daily"; // "daily" or "endless"
 let songs = [];
 let todaySongs = [];
+const SUPABASE_URL = "https://saotkxjbrtubbjuukwhj.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhb3RreGpicnR1YmJqdXVrd2hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxMzkyMzYsImV4cCI6MjA4OTcxNTIzNn0.vCKaoj44QHYmd7sPTP5Ssh8vmYzlwuCVIHkoxkj2kKA";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const DEV_MODE =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1";
+
+const WELCOME_MODAL_SEEN_KEY = "thundleWelcomeSeen";
+
+let authMode = "login";
+let currentUser = null;
+let welcomeBackShownThisLoad = false;
+let cloudSaveDebounceTimer = null;
+let applyingCloudSave = false;
+let syncStatus = "No cloud sync";
+let isSyncingNow = false;
+let lastSuccessfulSyncAt = "";
 
 const CLIPS = [1, 2, 4, 6, 8, 10];
 const MAX_GUESSES = 6;
 const PUZZLE_EPOCH_UTC = Date.UTC(2026, 2, 16);
+const STORAGE_KEYS = {
+  ACHIEVEMENTS: "thundle_achievements"
+};
+
+let achievements = {};
+let achievementProgress = {};
+let achievementDefinitions = [];
+let achievementToastQueue = [];
+let achievementToastShowing = false;
+const FEATURED_SONGS = {
+  hidden_caleb: [
+    "6-7-8-9-10",
+    "Apartment 69 (Funky Dade)",
+    "Being Serious (Intro)",
+    "Birds",
+    "Fat Albert",
+    "Feel Good",
+    "Joey, Baby!",
+    "Playground Freestyle",
+    "Puch",
+    "Radio Friendly",
+    "Respectfully",
+    "Revenge Of The Brobots",
+    "Ridin' In The Civic",
+    "Space Cat",
+    "Stacy And The Brobots",
+    "The Wizard Of Oz",
+    "Thotty Train",
+    "We Have Lots Of Sex"
+  ],
+  hidden_dom: [
+    "Missed Calls (Interlude)",
+    "Orders From Above (Interlude)"
+  ],
+  hidden_dylan: [
+    "Birds",
+    "Joey, Baby!",
+    "I Am The Liquor"
+  ],
+  hidden_mallory: [
+    "Half-Mast",
+    "Radio Friendly",
+    "Space Cat"
+  ],
+  hidden_cal: [
+    "Being Serious (Intro)",
+    "Serious People (Interlude)",
+    "Space Cat"
+  ],
+  hidden_brendon: [
+    "Apartment 69 (Funky Dade)",
+    "Loose Floor",
+    "Miami Love Sounds",
+    "Radio Friendly",
+    "ThunderParty DiscoStick"
+  ],
+  hidden_mike: [
+    "Distant Imagination",
+    "Today",
+    "Uproarious Applause"
+  ]
+};
 
 let songIndex = 0;
 let guessNumber = 0;
 let guessHistory = [[], []];
 let currentAudio = null;
+let currentAudioRequestId = 0;
 let waveformTimer = null;
 let bonusStarted = false;
 let gameFinished = false;
@@ -41,7 +123,8 @@ const sounds = {
   correct: new Audio("sounds/correct.mp3"),
   incorrect: new Audio("sounds/incorrect.mp3"),
   fail: new Audio("sounds/fail.mp3"),
-  newBest: new Audio("sounds/new-best.mp3")
+  newBest: new Audio("sounds/new-best.mp3"),
+  achievement: new Audio("sounds/achievement.mp3")
 };
 
 
@@ -131,7 +214,27 @@ function openWhatsNewFromMenu() {
   openWhatsNewModal();
 }
 
+function openAchievementsFromMenu() {
+  closeTopMenu();
+  openAchievementsModal();
+}
+
 const WHATS_NEW_CONTENT = {
+  "2.1": `
+    <h3>Version 2.1</h3>
+    <ul>
+      <li>Added a full Achievements system with multiple categories, rarities, hidden achievements, progress tracking, and unlock notifications.</li>
+      <li>Added account support with username, email, and password authentication.</li>
+      <li>Added cloud save syncing for stats, achievements, daily progress, and Endless data.</li>
+      <li>Added visible account status, sync status, and manual cloud sync options to the menu.</li>
+      <li>Expanded the About section with dedicated panels for the band, developer, how to play, achievements, accounts and saves, coming soon, what’s new, privacy, and feedback.</li>
+      <li>Added a versioned What’s New system with support for multiple update tabs.</li>
+      <li>Improved the results flow with better Bonus Song integration, Spotify links, album art reveal, and play button overlays.</li>
+      <li>Updated the Thundle logo with a brighter stylized text treatment, lightning flicker, click zap effects, and spark particles.</li>
+      <li>Improved header layout and responsiveness, including logo sizing and menu placement polish.</li>
+      <li>Added general visual polish, smoother animations, and overall UI improvements across the game.</li>
+    </ul>
+  `,
   "2.01": `
     <h3>Version 2.01</h3>
     <ul>
@@ -176,7 +279,7 @@ function openWhatsNewModal() {
   const modal = document.getElementById("whatsNewModal");
   if (!modal) return;
 
-  showWhatsNewVersion("2.01");
+  showWhatsNewVersion("2.1");
   modal.style.display = "flex";
   document.body.style.overflow = "hidden";
 
@@ -206,12 +309,14 @@ function showWhatsNewVersion(version) {
 
   content.innerHTML = WHATS_NEW_CONTENT[version] || "<p>No update notes yet.</p>";
 
+  const tab21 = document.getElementById("whatsNewTab21");
   const tab201 = document.getElementById("whatsNewTab201");
   const tab20 = document.getElementById("whatsNewTab20");
   const tab10 = document.getElementById("whatsNewTab10");
 
-  [tab201, tab20, tab10].forEach(btn => btn?.classList.remove("active"));
+  [tab21, tab201, tab20, tab10].forEach(btn => btn?.classList.remove("active"));
 
+  if (version === "2.1" && tab21) tab21.classList.add("active");
   if (version === "2.01" && tab201) tab201.classList.add("active");
   if (version === "2.0" && tab20) tab20.classList.add("active");
   if (version === "1.0" && tab10) tab10.classList.add("active");
@@ -245,6 +350,1274 @@ function closeSettingsModal() {
   }, 200);
 }
 
+function openAchievementsModal() {
+  const modal = document.getElementById("achievementsModal");
+  if (!modal) return;
+
+  renderAchievementsModal();
+
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+
+  modal.classList.remove("is-open");
+  void modal.offsetWidth;
+
+  requestAnimationFrame(() => {
+    modal.classList.add("is-open");
+  });
+}
+
+function closeAchievementsModal() {
+  const modal = document.getElementById("achievementsModal");
+  if (!modal) return;
+
+  modal.classList.remove("is-open");
+
+  setTimeout(() => {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  }, 200);
+}
+
+function openAboutModal() {
+  const modal = document.getElementById("aboutModal");
+  if (!modal) return;
+
+  showAboutWhatsNewVersion("2.1");
+
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+
+  modal.classList.remove("is-open");
+  void modal.offsetWidth;
+
+  requestAnimationFrame(() => {
+    modal.classList.add("is-open");
+  });
+
+  closeTopMenu();
+}
+
+function closeAboutModal() {
+  const modal = document.getElementById("aboutModal");
+  if (!modal) return;
+
+  modal.classList.remove("is-open");
+
+  setTimeout(() => {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  }, 200);
+}
+
+function toggleAboutSection(sectionId) {
+  const section = document.getElementById(sectionId);
+  if (!section) return;
+
+  section.classList.toggle("is-open");
+}
+
+function showAboutWhatsNewVersion(version) {
+  const content = document.getElementById("aboutWhatsNewContent");
+  if (!content) return;
+
+  content.innerHTML = WHATS_NEW_CONTENT[version] || "<p>No update notes yet.</p>";
+
+  const tab21 = document.getElementById("aboutWhatsNewTab21");
+  const tab201 = document.getElementById("aboutWhatsNewTab201");
+  const tab20 = document.getElementById("aboutWhatsNewTab20");
+  const tab10 = document.getElementById("aboutWhatsNewTab10");
+
+  [tab21, tab201, tab20, tab10].forEach(btn => btn?.classList.remove("active"));
+
+  if (version === "2.1" && tab21) tab21.classList.add("active");
+  if (version === "2.01" && tab201) tab201.classList.add("active");
+  if (version === "2.0" && tab20) tab20.classList.add("active");
+  if (version === "1.0" && tab10) tab10.classList.add("active");
+}
+
+function openAuthModal() {
+  const modal = document.getElementById("authModal");
+  if (!modal) return;
+
+  switchAuthMode(authMode);
+  setAuthMessage("");
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+
+  modal.classList.remove("is-open");
+  void modal.offsetWidth;
+
+  requestAnimationFrame(() => {
+    modal.classList.add("is-open");
+  });
+}
+
+function closeAuthModal() {
+  const modal = document.getElementById("authModal");
+  if (!modal) return;
+
+  modal.classList.remove("is-open");
+
+  setTimeout(() => {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  }, 200);
+}
+
+function openWelcomeModal() {
+  const modal = document.getElementById("welcomeModal");
+  if (!modal) return;
+
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+
+  modal.classList.remove("is-open");
+  void modal.offsetWidth;
+
+  requestAnimationFrame(() => {
+    modal.classList.add("is-open");
+  });
+}
+
+function closeWelcomeModal() {
+  const modal = document.getElementById("welcomeModal");
+  if (!modal) return;
+
+  modal.classList.remove("is-open");
+
+  setTimeout(() => {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  }, 200);
+}
+
+function markWelcomeSeen() {
+  localStorage.setItem(WELCOME_MODAL_SEEN_KEY, "true");
+}
+
+function hasSeenWelcomeModal() {
+  return localStorage.getItem(WELCOME_MODAL_SEEN_KEY) === "true";
+}
+
+function continueAsGuest() {
+  markWelcomeSeen();
+  closeWelcomeModal();
+}
+
+function beginWelcomeAuth() {
+  markWelcomeSeen();
+  closeWelcomeModal();
+  openAuthModal();
+}
+
+function maybeShowWelcomeModal() {
+  if (currentUser) return;
+  if (hasSeenWelcomeModal()) return;
+
+  openWelcomeModal();
+}
+
+function showWelcomeBackBanner() {
+  if (!currentUser || welcomeBackShownThisLoad) return;
+
+  const banner = document.getElementById("welcomeBackBanner");
+  if (!banner) return;
+
+  const username =
+    currentUser.user_metadata?.username ||
+    currentUser.email ||
+    "friend";
+
+  welcomeBackShownThisLoad = true;
+  banner.textContent = `Welcome back, ${username}!`;
+
+  banner.classList.remove("show");
+  void banner.offsetWidth;
+  banner.classList.add("show");
+  spawnWelcomeSparkles();
+
+  setTimeout(() => {
+  banner.classList.remove("show");
+}, 2600);
+}
+
+function spawnWelcomeSparkles() {
+  const container = document.getElementById("sparkleContainer");
+  const banner = document.getElementById("welcomeBackBanner");
+  if (!container || !banner) return;
+
+  const rect = banner.getBoundingClientRect();
+
+  const sparkleCount = 6;
+
+  for (let i = 0; i < sparkleCount; i++) {
+    const sparkle = document.createElement("div");
+    sparkle.className = "sparkle";
+    sparkle.textContent = "✦";
+
+    const x = rect.left + Math.random() * rect.width;
+    const y = rect.top + Math.random() * rect.height;
+
+    sparkle.style.left = `${x}px`;
+    sparkle.style.top = `${y}px`;
+
+    sparkle.style.animationDelay = `${Math.random() * 200}ms`;
+
+    container.appendChild(sparkle);
+
+    setTimeout(() => {
+      sparkle.remove();
+    }, 1000);
+  }
+}
+
+function switchAuthMode(mode) {
+  authMode = mode;
+
+  const loginTab = document.getElementById("authTabLogin");
+  const signupTab = document.getElementById("authTabSignup");
+  const submitButton = document.getElementById("authSubmitButton");
+  const usernameInput = document.getElementById("authUsername");
+  const usernameLabel = document.getElementById("authUsernameLabel");
+
+  if (loginTab) loginTab.classList.toggle("active", mode === "login");
+  if (signupTab) signupTab.classList.toggle("active", mode === "signup");
+  if (submitButton) submitButton.textContent = mode === "login" ? "Log In" : "Sign Up";
+
+  const showUsername = mode === "signup";
+  if (usernameInput) usernameInput.style.display = showUsername ? "block" : "none";
+  if (usernameLabel) usernameLabel.style.display = showUsername ? "block" : "none";
+
+  setAuthMessage("");
+}
+
+function setAuthMessage(message) {
+  const el = document.getElementById("authMessage");
+  if (el) {
+    el.textContent = message;
+  }
+}
+
+async function submitAuth() {
+  const username = document.getElementById("authUsername")?.value.trim() || "";
+  const email = document.getElementById("authEmail")?.value.trim() || "";
+  const password = document.getElementById("authPassword")?.value || "";
+
+  if (!email || !password) {
+    setAuthMessage("Enter your email and password.");
+    return;
+  }
+
+  if (authMode === "signup" && !username) {
+    setAuthMessage("Enter a username.");
+    return;
+  }
+
+  setAuthMessage(authMode === "login" ? "Logging in..." : "Creating account...");
+
+  try {
+    if (authMode === "signup") {
+      const { data, error } = await supabaseClient.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            username
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      currentUser = data.user || null;
+      markWelcomeSeen();
+      await refreshAuthUI();
+      await syncSaveDataAfterLogin();
+      closeAuthModal();
+      showWelcomeBackBanner();
+      return;
+    }
+
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) throw error;
+
+    currentUser = data.user || null;
+    markWelcomeSeen();
+    await refreshAuthUI();
+    await syncSaveDataAfterLogin();
+    closeAuthModal();
+showWelcomeBackBanner();
+  } catch (error) {
+    console.error("Auth error:", error);
+    setAuthMessage(error.message || "Something went wrong.");
+  }
+}
+
+
+function resetToFreshGuestState() {
+  stopCurrentAudio();
+  stopResultPreviewAudio();
+  stopMainRevealAudio();
+  closeModal();
+  closeRestartConfirmModal();
+  closeSettingsModal();
+  closeWhatsNewModal();
+  closeAchievementsModal();
+  closeAuthModal();
+
+  localStorage.removeItem("thundleStats");
+  localStorage.removeItem("thundleProgress");
+  localStorage.removeItem("thundleEndlessProgress");
+  localStorage.removeItem(STORAGE_KEYS.ACHIEVEMENTS);
+  localStorage.removeItem(ENDLESS_CONFIG_BESTS_KEY);
+  localStorage.removeItem("thundleEndlessBest");
+  localStorage.removeItem("thundleCloudSaveUpdatedAt");
+  localStorage.removeItem("thundleLocalSaveUpdatedAt");
+
+  achievements = {};
+  achievementProgress = {};
+  endlessBest = 0;
+  endlessScore = 0;
+  endlessCurrentSong = null;
+  endlessCurrentStartTime = 0;
+  endlessQueue = [];
+  endlessUsedIndices = [];
+  endlessNewBestCelebrated = false;
+  endlessSettings = {
+    guessLimit: 6,
+    clipStart: "beginning"
+  };
+
+  gameMode = "daily";
+  songIndex = 0;
+  guessNumber = 0;
+  guessHistory = [[], []];
+  bonusStarted = false;
+  gameFinished = false;
+  waveformPreviewShown = false;
+
+  const endlessSetupCard = document.getElementById("endlessSetupCard");
+  const gameCard = document.getElementById("game");
+  const nextCard = document.getElementById("countdownCard");
+  const showResultsSection = document.getElementById("showResultsSection");
+  const mainBonusButton = document.getElementById("mainBonusButton");
+
+  if (endlessSetupCard) endlessSetupCard.style.display = "none";
+  if (gameCard) gameCard.style.display = "block";
+  if (nextCard) nextCard.style.display = "block";
+  if (showResultsSection) showResultsSection.style.display = "none";
+  if (mainBonusButton) mainBonusButton.style.display = "none";
+
+  document.getElementById("songLabel").innerText = "Song #1";
+  document.getElementById("roundHint").innerText = "Starts at the beginning of the track.";
+  document.getElementById("feedback").innerText = "";
+  document.getElementById("guessInput").value = "";
+  document.getElementById("guessInput").disabled = false;
+  document.getElementById("guessButton").disabled = false;
+  document.getElementById("playButton").disabled = false;
+  document.getElementById("suggestions").innerHTML = "";
+  document.getElementById("artWrap").style.display = "none";
+
+  hideEndlessActionButtons();
+  hideWaveformPreviewMarker();
+
+  pickDailySongs();
+  preloadTodaySongs();
+  showPuzzleNumber();
+  renderAttemptRow();
+
+  updateModeButtons();
+  updateEndlessSetupBestText();
+  updateEndlessRunCounter();
+  updateEndlessRestartButton();
+  renderAchievementsModalIfOpen();
+  updateGuestCloudBadge();
+
+  const banner = document.getElementById("welcomeBackBanner");
+if (banner) {
+  banner.classList.remove("show");
+}
+}
+
+async function logoutAccount() {
+  try {
+    const { error } = await supabaseClient.auth.signOut();
+    if (error) throw error;
+
+    currentUser = null;
+welcomeBackShownThisLoad = false;
+isSyncingNow = false;
+lastSuccessfulSyncAt = "";
+setSyncStatus("No cloud sync");
+
+resetToFreshGuestState();
+
+await refreshAuthUI();
+closeTopMenu();
+maybeShowWelcomeModal();
+  } catch (error) {
+    console.error("Logout error:", error);
+  }
+}
+
+async function refreshAuthUI() {
+  const statusText = document.getElementById("accountStatusText");
+  const buttonText = document.getElementById("accountButtonText");
+  const logoutButton = document.getElementById("logoutMenuButton");
+  const syncButton = document.getElementById("syncNowMenuButton");
+
+  const { data, error } = await supabaseClient.auth.getUser();
+  if (error && error.name !== "AuthSessionMissingError") {
+    console.error("Get user error:", error);
+  }
+
+  currentUser = data?.user || null;
+
+  if (currentUser) {
+  const username =
+    currentUser.user_metadata?.username ||
+    currentUser.email ||
+    "Signed in";
+
+  if (statusText) statusText.textContent = `Signed in as ${username}`;
+  if (buttonText) buttonText.textContent = "Manage Account";
+  if (logoutButton) logoutButton.style.display = "flex";
+  if (syncButton) syncButton.style.display = "flex";
+} else {
+  if (statusText) statusText.textContent = "Not signed in";
+  if (buttonText) buttonText.textContent = "Sign Up / Log In";
+  if (logoutButton) logoutButton.style.display = "none";
+  if (syncButton) syncButton.style.display = "none";
+  lastSuccessfulSyncAt = "";
+  syncStatus = "No cloud sync";
+}
+
+updateSyncStatusUI();
+}
+
+function getLocalSaveTimestamp() {
+  return localStorage.getItem("thundleLocalSaveUpdatedAt") || "";
+}
+
+function setLocalSaveTimestamp(value) {
+  if (value) {
+    localStorage.setItem("thundleLocalSaveUpdatedAt", value);
+  } else {
+    localStorage.removeItem("thundleLocalSaveUpdatedAt");
+  }
+}
+
+function getCloudSaveTimestamp() {
+  return localStorage.getItem("thundleCloudSaveUpdatedAt") || "";
+}
+
+function setCloudSaveTimestamp(value) {
+  if (value) {
+    localStorage.setItem("thundleCloudSaveUpdatedAt", value);
+  } else {
+    localStorage.removeItem("thundleCloudSaveUpdatedAt");
+  }
+}
+
+function markLocalSaveUpdated() {
+  setLocalSaveTimestamp(new Date().toISOString());
+
+  if (currentUser && !applyingCloudSave) {
+    setSyncStatus("Local changes not yet synced");
+  }
+}
+
+function getLocalSaveBundle() {
+  return {
+    stats: getStats(),
+    dailyProgress: getProgress(),
+    endlessProgress: getEndlessProgress(),
+    achievements: {
+      unlocked: achievements,
+      progress: achievementProgress
+    },
+    endlessConfigBests: getEndlessConfigBests(),
+    updatedAt: getLocalSaveTimestamp() || ""
+  };
+}
+
+function applyFullSaveData(saveData) {
+  if (!saveData || typeof saveData !== "object") return;
+
+  applyingCloudSave = true;
+
+  try {
+    if (saveData.stats) {
+      localStorage.setItem("thundleStats", JSON.stringify(saveData.stats));
+    }
+
+    if (saveData.dailyProgress) {
+      localStorage.setItem("thundleProgress", JSON.stringify(saveData.dailyProgress));
+    }
+
+    if (saveData.endlessProgress) {
+      localStorage.setItem("thundleEndlessProgress", JSON.stringify(saveData.endlessProgress));
+    }
+
+    if (saveData.achievements) {
+      localStorage.setItem(
+        STORAGE_KEYS.ACHIEVEMENTS,
+        JSON.stringify({
+          unlocked: saveData.achievements.unlocked || {},
+          progress: saveData.achievements.progress || {}
+        })
+      );
+    }
+
+    if (saveData.endlessConfigBests) {
+      localStorage.setItem(
+        ENDLESS_CONFIG_BESTS_KEY,
+        JSON.stringify(saveData.endlessConfigBests)
+      );
+    }
+
+    if (saveData.updatedAt) {
+      setCloudSaveTimestamp(saveData.updatedAt);
+      setLocalSaveTimestamp(saveData.updatedAt);
+      lastSuccessfulSyncAt = saveData.updatedAt;
+    }
+
+    loadAchievements();
+
+    endlessBest = Number(localStorage.getItem("thundleEndlessBest")) || getEndlessProgress().endlessBest || 0;
+
+    if (gameMode === "endless") {
+      const restored = loadEndlessProgressIfAvailable();
+      if (!restored) {
+        gameMode = "daily";
+        pickDailySongs();
+        preloadTodaySongs();
+        showPuzzleNumber();
+        renderAttemptRow();
+        loadProgressIfAvailable();
+      }
+    } else {
+      pickDailySongs();
+      preloadTodaySongs();
+      showPuzzleNumber();
+      renderAttemptRow();
+      loadProgressIfAvailable();
+    }
+
+    updateEndlessSetupBestText();
+    updateEndlessRunCounter();
+    renderAchievementsModalIfOpen();
+    reconcileAchievementsFromCurrentState();
+  } finally {
+    applyingCloudSave = false;
+  }
+}
+
+function renderAchievementsModalIfOpen() {
+  const modal = document.getElementById("achievementsModal");
+  if (modal && modal.style.display === "flex") {
+    renderAchievementsModal();
+  }
+}
+
+function setSyncStatus(message) {
+  syncStatus = message;
+  updateSyncStatusUI();
+}
+
+function formatTimeAgo(isoString) {
+  if (!isoString) return "Never";
+
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+
+  if (diffSec < 5) return "just now";
+  if (diffSec < 60) return `${diffSec}s ago`;
+
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
+}
+
+function updateSyncStatusUI() {
+  const syncText = document.getElementById("syncStatusText");
+  const syncButton = document.getElementById("syncNowMenuButton");
+
+  if (!syncText || !syncButton) return;
+
+  if (!currentUser) {
+  syncText.textContent = "No cloud sync";
+  syncButton.style.display = "none";
+  updateGuestCloudBadge();
+  return;
+}
+
+  if (isSyncingNow) {
+    syncText.textContent = "Syncing...";
+  } else if (lastSuccessfulSyncAt) {
+    syncText.textContent = `Last synced ${formatTimeAgo(lastSuccessfulSyncAt)}`;
+  } else {
+    syncText.textContent = syncStatus || "Cloud sync ready";
+  }
+
+  syncButton.style.display = "flex";
+  updateGuestCloudBadge();
+}
+
+function updateGuestCloudBadge() {
+  const badge = document.getElementById("cloudBadge");
+  if (!badge) return;
+
+  if (!currentUser) {
+    badge.textContent = "Playing as guest";
+    return;
+  }
+
+  if (isSyncingNow) {
+    badge.textContent = "Cloud sync in progress...";
+    return;
+  }
+
+  if (lastSuccessfulSyncAt) {
+    badge.textContent = `Cloud synced ${formatTimeAgo(lastSuccessfulSyncAt)}`;
+    return;
+  }
+
+  badge.textContent = "Cloud save enabled";
+}
+
+function startSyncStatusTicker() {
+  setInterval(() => {
+    if (currentUser && !isSyncingNow && lastSuccessfulSyncAt) {
+      updateSyncStatusUI();
+    }
+  }, 1000);
+}
+
+async function manualCloudSync() {
+  if (!currentUser || isSyncingNow) return;
+  await saveToCloud(true);
+}
+
+async function loadCloudSave() {
+  if (!currentUser) return null;
+
+  const { data, error } = await supabaseClient
+    .from("game_saves")
+    .select("save_data, updated_at")
+    .eq("user_id", currentUser.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Cloud load error:", error);
+    return null;
+  }
+
+  if (!data) return null;
+
+  return {
+    ...(data.save_data || {}),
+    updatedAt: data.updated_at || data.save_data?.updatedAt || ""
+  };
+}
+
+async function saveToCloud(force = false) {
+  if (!currentUser || applyingCloudSave || isSyncingNow) return;
+
+  isSyncingNow = true;
+  setSyncStatus("Syncing...");
+
+  const saveData = getLocalSaveBundle();
+  const timestamp = new Date().toISOString();
+
+  saveData.updatedAt = timestamp;
+
+  const payload = {
+    user_id: currentUser.id,
+    save_data: saveData,
+    updated_at: timestamp
+  };
+
+  const { error } = await supabaseClient
+    .from("game_saves")
+    .upsert(payload);
+
+  isSyncingNow = false;
+
+  if (error) {
+    console.error("Cloud save error:", error);
+    setSyncStatus("Sync failed");
+    updateSyncStatusUI();
+    return;
+  }
+
+  setLocalSaveTimestamp(timestamp);
+  setCloudSaveTimestamp(timestamp);
+  lastSuccessfulSyncAt = timestamp;
+  setSyncStatus("Synced just now");
+
+  if (force) {
+    console.log("Cloud save complete");
+  }
+}
+
+function scheduleCloudSave() {
+  if (!currentUser || applyingCloudSave) return;
+
+  clearTimeout(cloudSaveDebounceTimer);
+  cloudSaveDebounceTimer = setTimeout(() => {
+    saveToCloud();
+  }, 600);
+}
+
+async function syncSaveDataAfterLogin() {
+  if (!currentUser) return;
+
+  const cloudSave = await loadCloudSave();
+  const localSave = getLocalSaveBundle();
+
+  const localTimestamp = getLocalSaveTimestamp() || "";
+  const cloudTimestamp = cloudSave?.updatedAt || "";
+
+  // Fresh browser / no meaningful local save yet:
+  // trust cloud if it exists
+  const hasMeaningfulLocalSave =
+    !!localTimestamp &&
+    (
+      localSave.stats?.played > 0 ||
+      localSave.dailyProgress?.guessHistory?.[0]?.length > 0 ||
+      localSave.dailyProgress?.guessHistory?.[1]?.length > 0 ||
+      localSave.endlessProgress?.endlessScore > 0 ||
+      Object.keys(localSave.achievements?.unlocked || {}).length > 0 ||
+      Object.keys(localSave.endlessConfigBests || {}).length > 0
+    );
+
+  if (!cloudSave) {
+    if (hasMeaningfulLocalSave) {
+      await saveToCloud(true);
+    }
+    reconcileAchievementsFromCurrentState();
+    return;
+  }
+
+  if (!hasMeaningfulLocalSave) {
+    applyFullSaveData(cloudSave);
+    reconcileAchievementsFromCurrentState();
+    await saveToCloud(true);
+    return;
+  }
+
+  const localTime = localTimestamp ? new Date(localTimestamp).getTime() : 0;
+  const cloudTime = cloudTimestamp ? new Date(cloudTimestamp).getTime() : 0;
+
+  if (cloudTime > localTime) {
+    applyFullSaveData(cloudSave);
+  } else if (localTime > cloudTime) {
+    await saveToCloud(true);
+  } else {
+    applyFullSaveData(cloudSave);
+  }
+
+  reconcileAchievementsFromCurrentState();
+  await saveToCloud(true);
+}
+
+async function devResetAccountProgress() {
+  if (!DEV_MODE) return;
+
+  const confirmed = window.confirm("Reset all local and cloud progress for this account?");
+  if (!confirmed) return;
+
+  try {
+    localStorage.removeItem("thundleStats");
+    localStorage.removeItem("thundleProgress");
+    localStorage.removeItem("thundleEndlessProgress");
+    localStorage.removeItem(STORAGE_KEYS.ACHIEVEMENTS);
+    localStorage.removeItem(ENDLESS_CONFIG_BESTS_KEY);
+    localStorage.removeItem("thundleEndlessBest");
+    localStorage.removeItem("thundleCloudSaveUpdatedAt");
+    localStorage.removeItem("thundleLocalSaveUpdatedAt");
+    localStorage.removeItem(WELCOME_MODAL_SEEN_KEY);
+
+    achievements = {};
+    achievementProgress = {};
+
+    if (currentUser) {
+      const { error } = await supabaseClient
+        .from("game_saves")
+        .delete()
+        .eq("user_id", currentUser.id);
+
+      if (error) throw error;
+    }
+
+    stopCurrentAudio();
+    stopResultPreviewAudio();
+    stopMainRevealAudio();
+
+    gameMode = "daily";
+    endlessScore = 0;
+    endlessCurrentSong = null;
+    endlessCurrentStartTime = 0;
+    endlessQueue = [];
+    endlessUsedIndices = [];
+    endlessBest = 0;
+    endlessNewBestCelebrated = false;
+    bonusStarted = false;
+    gameFinished = false;
+    songIndex = 0;
+    guessNumber = 0;
+    guessHistory = [[], []];
+
+    pickDailySongs();
+    preloadTodaySongs();
+    showPuzzleNumber();
+    resetRoundState();
+    loadProgressIfAvailable();
+    updateModeButtons();
+    updateEndlessSetupBestText();
+    updateEndlessRunCounter();
+    renderAchievementsModalIfOpen();
+
+    welcomeBackShownThisLoad = false;
+    maybeShowWelcomeModal();
+
+    alert("Dev reset complete.");
+    console.log("Dev reset complete.");
+  } catch (error) {
+    console.error("Dev reset failed:", error);
+    alert("Dev reset failed. Check console.");
+  }
+}
+
+function loadAchievements() {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.ACHIEVEMENTS)) || {};
+  achievements = saved.unlocked || {};
+  achievementProgress = saved.progress || {};
+}
+
+function saveAchievements() {
+  localStorage.setItem(
+    STORAGE_KEYS.ACHIEVEMENTS,
+    JSON.stringify({
+      unlocked: achievements,
+      progress: achievementProgress
+    })
+  );
+  markLocalSaveUpdated();
+  scheduleCloudSave();
+}
+
+function unlockAchievement(id) {
+  if (achievements[id]) return;
+
+  achievements[id] = true;
+  saveAchievements();
+
+  achievementToastQueue.push(id);
+  processAchievementToastQueue();
+}
+
+function processAchievementToastQueue() {
+  if (achievementToastShowing) return;
+  if (achievementToastQueue.length === 0) return;
+
+  const nextId = achievementToastQueue.shift();
+  achievementToastShowing = true;
+  showAchievementToast(nextId);
+}
+
+function updateProgress(id, value, max) {
+  achievementProgress[id] = value;
+
+  if (value >= max) {
+    unlockAchievement(id);
+  }
+
+  saveAchievements();
+}
+
+function showAchievementToast(id) {
+  const achievement = achievementDefinitions.find(a => a.id === id);
+  if (!achievement) {
+    achievementToastShowing = false;
+    processAchievementToastQueue();
+    return;
+  }
+
+  const toast = document.getElementById("achievementToast");
+  const art = document.getElementById("achievementToastArt");
+  const title = document.getElementById("achievementToastTitle");
+  const description = document.getElementById("achievementToastDescription");
+
+  if (!toast || !art || !title || !description) {
+    achievementToastShowing = false;
+    processAchievementToastQueue();
+    return;
+  }
+
+  art.src = achievement.art;
+  art.alt = achievement.title;
+  title.textContent = achievement.title;
+  description.textContent = achievement.description;
+
+  toast.classList.remove(
+  "toast-common",
+  "toast-uncommon",
+  "toast-rare",
+  "toast-epic",
+  "toast-legendary"
+);
+
+toast.classList.add(`toast-${achievement.rarity.toLowerCase()}`);
+
+  playSound(sounds.achievement);
+
+  toast.classList.remove("show");
+  void toast.offsetWidth;
+  toast.classList.add("show");
+
+  clearTimeout(showAchievementToast._timer);
+  showAchievementToast._timer = setTimeout(() => {
+    toast.classList.remove("show");
+
+    setTimeout(() => {
+      achievementToastShowing = false;
+      processAchievementToastQueue();
+    }, 250);
+  }, 3000);
+}
+
+function incrementAchievementProgress(id, amount, target) {
+  const current = achievementProgress[id] || 0;
+  updateProgress(id, current + amount, target);
+}
+
+function markSongGuessedForDiscography(songTitle) {
+  const guessedSongs = achievementProgress.special_discography_songs || [];
+
+  if (!guessedSongs.includes(songTitle)) {
+    guessedSongs.push(songTitle);
+    achievementProgress.special_discography_songs = guessedSongs;
+    saveAchievements();
+  }
+
+  updateProgress("special_discography", guessedSongs.length, songs.length);
+}
+
+function checkFeaturedAchievements(song) {
+  if (!song || !song.title) return;
+
+  const normalizedTitle = song.title.trim().toLowerCase();
+
+  Object.entries(FEATURED_SONGS).forEach(([achievementId, songTitles]) => {
+    const hasMatch = songTitles.some(title =>
+      title.trim().toLowerCase() === normalizedTitle
+    );
+
+    if (hasMatch) {
+      unlockAchievement(achievementId);
+    }
+  });
+}
+
+function isHardcoreEndlessMode() {
+  return endlessSettings.guessLimit === 1 && endlessSettings.clipStart === "middle";
+}
+
+function checkEndlessAchievements() {
+  if (endlessScore >= 5) unlockAchievement("endless_5");
+  if (endlessScore >= 10) unlockAchievement("endless_10");
+  if (endlessScore >= 20) unlockAchievement("endless_20");
+  if (endlessScore >= 30) unlockAchievement("endless_30");
+  if (endlessScore >= 50) unlockAchievement("endless_50");
+  if (endlessScore >= 100) unlockAchievement("endless_100");
+
+  updateProgress("endless_5", Math.min(endlessScore, 5), 5);
+  updateProgress("endless_10", Math.min(endlessScore, 10), 10);
+  updateProgress("endless_20", Math.min(endlessScore, 20), 20);
+  updateProgress("endless_30", Math.min(endlessScore, 30), 30);
+  updateProgress("endless_50", Math.min(endlessScore, 50), 50);
+  updateProgress("endless_100", Math.min(endlessScore, 100), 100);
+
+  if (isHardcoreEndlessMode()) {
+    if (endlessScore >= 5) unlockAchievement("endless_hardcore_5");
+    if (endlessScore >= 10) unlockAchievement("endless_hardcore_10");
+    if (endlessScore >= 20) unlockAchievement("endless_hardcore_20");
+    if (endlessScore >= 30) unlockAchievement("endless_hardcore_30");
+    if (endlessScore >= 50) unlockAchievement("endless_hardcore_50");
+    if (endlessScore >= 100) unlockAchievement("endless_hardcore_100");
+
+    updateProgress("endless_hardcore_5", Math.min(endlessScore, 5), 5);
+    updateProgress("endless_hardcore_10", Math.min(endlessScore, 10), 10);
+    updateProgress("endless_hardcore_20", Math.min(endlessScore, 20), 20);
+    updateProgress("endless_hardcore_30", Math.min(endlessScore, 30), 30);
+    updateProgress("endless_hardcore_50", Math.min(endlessScore, 50), 50);
+    updateProgress("endless_hardcore_100", Math.min(endlessScore, 100), 100);
+  }
+}
+
+function updateDailyShareStreak() {
+  const todayKey = getTodayKeyUTC();
+  const lastSharedDate = achievementProgress.sharing_last_date || "";
+  let currentShareStreak = achievementProgress.sharing_streak_5 || 0;
+
+  if (lastSharedDate === todayKey) {
+    updateProgress("sharing_streak_5", Math.min(currentShareStreak, 5), 5);
+    return;
+  }
+
+  if (lastSharedDate && isYesterdayUTC(lastSharedDate, todayKey)) {
+    currentShareStreak += 1;
+  } else {
+    currentShareStreak = 1;
+  }
+
+  achievementProgress.sharing_last_date = todayKey;
+  achievementProgress.sharing_streak_5 = currentShareStreak;
+  saveAchievements();
+
+  updateProgress("sharing_streak_5", Math.min(currentShareStreak, 5), 5);
+}
+
+function getAchievementTarget(id) {
+  const targets = {
+    daily_5: 5,
+    daily_10: 10,
+    daily_50: 50,
+    daily_100: 100,
+    daily_200: 200,
+    daily_365: 365,
+
+    bonus_5: 5,
+    bonus_10: 10,
+    bonus_50: 50,
+    bonus_100: 100,
+    bonus_200: 200,
+    bonus_365: 365,
+
+    sharing_perfect: 1,
+    sharing_streak_5: 5,
+
+    streak_3: 3,
+    streak_5: 5,
+    streak_7: 7,
+    streak_30: 30,
+    streak_50: 50,
+    streak_100: 100,
+
+    endless_5: 5,
+    endless_10: 10,
+    endless_20: 20,
+    endless_30: 30,
+    endless_50: 50,
+    endless_100: 100,
+
+    endless_hardcore_5: 5,
+    endless_hardcore_10: 10,
+    endless_hardcore_20: 20,
+    endless_hardcore_30: 30,
+    endless_hardcore_50: 50,
+    endless_hardcore_100: 100,
+
+    special_discography: songs.length,
+    special_perfect_week: 7
+  };
+
+  return targets[id] || 1;
+}
+
+function reconcileAchievementsFromCurrentState() {
+  const stats = getStats();
+  const todayKey = getTodayKeyUTC();
+
+  // Daily totals
+  if (stats.wins >= 1) unlockAchievement("daily_1");
+  updateProgress("daily_5", Math.min(stats.wins, 5), 5);
+  updateProgress("daily_10", Math.min(stats.wins, 10), 10);
+  updateProgress("daily_50", Math.min(stats.wins, 50), 50);
+  updateProgress("daily_100", Math.min(stats.wins, 100), 100);
+  updateProgress("daily_200", Math.min(stats.wins, 200), 200);
+  updateProgress("daily_365", Math.min(stats.wins, 365), 365);
+
+  // Streaks
+  updateProgress("streak_3", Math.min(stats.streak, 3), 3);
+  updateProgress("streak_5", Math.min(stats.streak, 5), 5);
+  updateProgress("streak_7", Math.min(stats.streak, 7), 7);
+  updateProgress("streak_30", Math.min(stats.streak, 30), 30);
+  updateProgress("streak_50", Math.min(stats.streak, 50), 50);
+  updateProgress("streak_100", Math.min(stats.streak, 100), 100);
+
+  // Endless bests
+  const configBests = getEndlessConfigBests();
+  const normalBest = Math.max(
+    configBests["guessLimit:6|clipStart:beginning"] || 0,
+    configBests["guessLimit:6|clipStart:middle"] || 0
+  );
+  const hardcoreBest = Math.max(
+    configBests["guessLimit:1|clipStart:middle"] || 0
+  );
+
+  updateProgress("endless_5", Math.min(normalBest, 5), 5);
+  updateProgress("endless_10", Math.min(normalBest, 10), 10);
+  updateProgress("endless_20", Math.min(normalBest, 20), 20);
+  updateProgress("endless_30", Math.min(normalBest, 30), 30);
+  updateProgress("endless_50", Math.min(normalBest, 50), 50);
+  updateProgress("endless_100", Math.min(normalBest, 100), 100);
+
+  updateProgress("endless_hardcore_5", Math.min(hardcoreBest, 5), 5);
+  updateProgress("endless_hardcore_10", Math.min(hardcoreBest, 10), 10);
+  updateProgress("endless_hardcore_20", Math.min(hardcoreBest, 20), 20);
+  updateProgress("endless_hardcore_30", Math.min(hardcoreBest, 30), 30);
+  updateProgress("endless_hardcore_50", Math.min(hardcoreBest, 50), 50);
+  updateProgress("endless_hardcore_100", Math.min(hardcoreBest, 100), 100);
+
+  // Existing progress-only achievements
+  const shareStreak = achievementProgress.sharing_streak_5 || 0;
+  updateProgress("sharing_streak_5", Math.min(shareStreak, 5), 5);
+
+  const perfectWeek = achievementProgress.special_perfect_week || 0;
+  updateProgress("special_perfect_week", Math.min(perfectWeek, 7), 7);
+
+  const guessedSongs = achievementProgress.special_discography_songs || [];
+  updateProgress("special_discography", Math.min(guessedSongs.length, songs.length), songs.length || 1);
+
+  renderAchievementsModalIfOpen();
+}
+
+function renderAchievementsModal() {
+  const summary = document.getElementById("achievementsSummary");
+  const list = document.getElementById("achievementsList");
+  if (!summary || !list) return;
+
+  list.innerHTML = "";
+
+  const sortedAchievements = achievementDefinitions
+    .slice()
+    .sort((a, b) => a.achievementNumber - b.achievementNumber);
+
+  const unlockedAchievements = sortedAchievements.filter(a => achievements[a.id]);
+  const lockedAchievements = sortedAchievements.filter(a => !achievements[a.id]);
+
+  const unlockedCount = unlockedAchievements.length;
+  summary.textContent = `${unlockedCount}/${achievementDefinitions.length} unlocked`;
+
+  const sections = [
+    { title: "Unlocked", items: unlockedAchievements },
+    { title: "Locked", items: lockedAchievements }
+  ];
+
+  sections.forEach(sectionData => {
+    if (sectionData.items.length === 0) return;
+
+    const section = document.createElement("section");
+    section.className = "achievement-category-section";
+
+    const heading = document.createElement("h3");
+    heading.className = "achievement-category-heading";
+    heading.textContent = sectionData.title;
+    section.appendChild(heading);
+
+    const grid = document.createElement("div");
+    grid.className = "achievements-grid";
+
+    sectionData.items.forEach(achievement => {
+      const unlocked = !!achievements[achievement.id];
+      const hiddenLocked = achievement.hidden && !unlocked;
+
+      const card = document.createElement("div");
+      card.className = `achievement-card ${unlocked ? "unlocked" : "locked"}${hiddenLocked ? " hidden-achievement" : ""}`;
+
+      const artWrap = document.createElement("div");
+      artWrap.className = "achievement-art-wrap";
+
+      const img = document.createElement("img");
+      img.className = `achievement-art${unlocked ? "" : " is-locked-art"}`;
+      img.src = achievement.art;
+      img.alt = hiddenLocked ? "Hidden achievement" : achievement.title;
+
+      artWrap.appendChild(img);
+
+      if (!unlocked) {
+        const overlay = document.createElement("div");
+        overlay.className = "achievement-art-overlay";
+        overlay.textContent = hiddenLocked ? "?" : "🔒";
+        artWrap.appendChild(overlay);
+      }
+
+      const body = document.createElement("div");
+      body.className = "achievement-card-body";
+
+      const top = document.createElement("div");
+      top.className = "achievement-card-top";
+
+      const title = document.createElement("h4");
+      title.textContent = hiddenLocked ? "Hidden Achievement" : achievement.title;
+
+      const rarity = document.createElement("span");
+      rarity.className = `achievement-rarity rarity-${achievement.rarity.toLowerCase()}`;
+      rarity.textContent = achievement.rarity;
+
+      top.appendChild(title);
+      top.appendChild(rarity);
+
+      const description = document.createElement("p");
+      description.textContent = hiddenLocked
+        ? "Keep playing Thundle to unlock!"
+        : achievement.description;
+
+      body.appendChild(top);
+      body.appendChild(description);
+
+      if (achievement.showProgressBar) {
+        const progressWrap = document.createElement("div");
+        progressWrap.className = "achievement-progress-wrap";
+
+        const progressBar = document.createElement("div");
+        progressBar.className = "achievement-progress-bar";
+
+        const progressFill = document.createElement("div");
+        progressFill.className = "achievement-progress-fill";
+
+        const target = getAchievementTarget(achievement.id);
+        const current = Math.min(achievementProgress[achievement.id] || 0, target);
+        const percent = target > 0 ? (current / target) * 100 : 0;
+
+        progressFill.style.width = `${percent}%`;
+        progressBar.appendChild(progressFill);
+
+        const progressText = document.createElement("span");
+        progressText.className = "achievement-progress-text";
+        progressText.textContent = `${current}/${target}`;
+
+        progressWrap.appendChild(progressBar);
+        progressWrap.appendChild(progressText);
+        body.appendChild(progressWrap);
+      } else {
+        const spacer = document.createElement("div");
+        spacer.className = "achievement-progress-spacer";
+        body.appendChild(spacer);
+      }
+
+      card.appendChild(artWrap);
+      card.appendChild(body);
+      grid.appendChild(card);
+    });
+
+    section.appendChild(grid);
+    list.appendChild(section);
+  });
+}
 
 function playSound(sound) {
   if (!sound || sfxMuted) return;
@@ -274,8 +1647,23 @@ if (Number.isNaN(sfxVolume)) {
 
 fetch("songs.json")
   .then(r => r.json())
-  .then(data => {
-    songs = data;
+  .then(songData => {
+    songs = songData;
+    return fetch("achievements.json");
+  })
+  .then(r => r.json())
+  .then(achievementData => {
+    achievementDefinitions = achievementData;
+
+    achievementDefinitions.forEach(a => {
+      a.art = `assets/achievements/${a.fileName}`;
+    });
+
+    loadAchievements();
+
+    console.log("Achievement definitions loaded:", achievementDefinitions);
+    console.log("Unlocked achievements loaded:", achievements);
+
     setupAutocomplete();
 
     const restoredEndless = loadEndlessProgressIfAvailable();
@@ -290,12 +1678,32 @@ fetch("songs.json")
     }
 
     updateCountdown();
-    setInterval(updateCountdown, 1000);
-    updateModeButtons();
-    applySfxVolume();
-    updateSettingsUI();
-    updateEndlessSetupBestText();
+setInterval(updateCountdown, 1000);
+startSyncStatusTicker();
+updateModeButtons();
+applySfxVolume();
+updateSettingsUI();
+updateEndlessSetupBestText();
+
+const devButton = document.getElementById("devResetButton");
+if (devButton && !DEV_MODE) {
+  devButton.style.display = "none";
+}
+
+refreshAuthUI().then(() => {
+  if (currentUser) {
+    syncSaveDataAfterLogin().then(() => {
+      showWelcomeBackBanner();
+    });
+  } else {
+    reconcileAchievementsFromCurrentState();
+    maybeShowWelcomeModal();
+  }
+});
   })
+  .catch(err => {
+    console.error("Failed to load game data:", err);
+  });
 
 function getDefaultStats() {
   return {
@@ -333,6 +1741,8 @@ function getStats() {
 
 function saveStats(stats) {
   localStorage.setItem("thundleStats", JSON.stringify(stats));
+  markLocalSaveUpdated();
+  scheduleCloudSave();
 }
 
 function setupAutocomplete() {
@@ -500,6 +1910,8 @@ function getEndlessConfigBests() {
 
 function saveEndlessConfigBests(bests) {
   localStorage.setItem(ENDLESS_CONFIG_BESTS_KEY, JSON.stringify(bests));
+  markLocalSaveUpdated();
+  scheduleCloudSave();
 }
 
 function getBestForSettings(settings = endlessSettings) {
@@ -648,6 +2060,7 @@ function getRandomMiddleStartTime(duration) {
 }
 
 function resetRoundState() {
+  stopMainRevealAudio();
   songIndex = 0;
   guessNumber = 0;
   guessHistory = [[], []];
@@ -735,12 +2148,23 @@ function nextEndlessSong() {
 }
 
 function stopCurrentAudio() {
+  currentAudioRequestId++;
+
   if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
+    const audio = currentAudio;
     currentAudio = null;
+
+    try {
+      audio.pause();
+    } catch {}
+
+    try {
+      audio.removeAttribute("src");
+      audio.load();
+    } catch {}
   }
 
+  stopWaveformLoading();
   stopWaveform();
   setPlayButtonState(false);
 
@@ -755,19 +2179,16 @@ function playClip() {
 
   const button = document.getElementById("playButton");
   const song = getCurrentSong();
-  if (!song) return;
+  if (!song || !button) return;
 
   if (currentAudio && !currentAudio.paused) {
-  stopCurrentAudio();
-  setPlayButtonState(false);
-  button.disabled = false;
-  return;
-}
+    stopCurrentAudio();
+    return;
+  }
 
+  stopCurrentAudio();
   button.disabled = true;
   setPlayButtonLoading();
-
-  stopCurrentAudio();
   startWaveformLoading();
 
   if (!waveformPreviewShown) {
@@ -776,61 +2197,55 @@ function playClip() {
   updateWaveformPreviewMarker();
 
   const clipSeconds = CLIPS[Math.min(guessNumber, CLIPS.length - 1)];
-  const preloadIndex = gameMode === "endless" ? 0 : songIndex;
-  const audio = preloadedAudio[preloadIndex]
-    ? preloadedAudio[preloadIndex].cloneNode()
-    : new Audio(song.file);
+  const requestId = ++currentAudioRequestId;
 
+  const audio = new Audio();
+  audio.preload = "auto";
+  audio.src = song.file;
   currentAudio = audio;
 
   let clipTimeout = null;
-  let playbackHandled = false;
   let loadTimeout = null;
+  let started = false;
+  let cleanedUp = false;
 
-  function restoreButton() {
-  setPlayButtonState(false);
-  button.disabled = false;
-}
+  function cleanup(resetCurrent = true) {
+    if (cleanedUp) return;
+    cleanedUp = true;
 
-  loadTimeout = setTimeout(() => {
-    if (currentAudio === audio && !playbackHandled) {
-      console.error("Audio load timed out:", song.file);
-      stopWaveformLoading();
-      stopWaveform();
-      restoreButton();
+    if (clipTimeout) {
+      clearTimeout(clipTimeout);
+      clipTimeout = null;
+    }
+
+    if (loadTimeout) {
+      clearTimeout(loadTimeout);
+      loadTimeout = null;
+    }
+
+    try {
+      audio.pause();
+    } catch {}
+
+    try {
+      audio.removeAttribute("src");
+      audio.load();
+    } catch {}
+
+    stopWaveformLoading();
+    stopWaveform();
+    setPlayButtonState(false);
+    button.disabled = false;
+
+    if (resetCurrent && currentAudio === audio) {
       currentAudio = null;
     }
-  }, 10000);
-
-  function beginPlayback() {
-  if (playbackHandled) return;
-  playbackHandled = true;
-
-  if (loadTimeout) {
-    clearTimeout(loadTimeout);
-    loadTimeout = null;
   }
 
-  stopWaveformLoading();
-  startWaveform(clipSeconds);
-  setPlayButtonState(true);
-  button.disabled = false;
-
-  clipTimeout = setTimeout(() => {
-    if (currentAudio === audio) {
-      audio.pause();
-      audio.currentTime = 0;
-      currentAudio = null;
-      stopWaveform();
-      restoreButton();
-    }
-  }, clipSeconds * 1000 + 150);
-}
-
-  audio.addEventListener("loadedmetadata", () => {
+  function getStartTime() {
     let startTime = 0;
 
-    if (gameMode === "daily" && songIndex === 1) {
+    if (gameMode === "daily" && songIndex === 1 && Number.isFinite(audio.duration)) {
       const day = getUTCDayNumber();
       const bonusRng = mulberry32((day + 1) * 999 + 17);
       const minStart = audio.duration * 0.35;
@@ -839,7 +2254,7 @@ function playClip() {
     }
 
     if (gameMode === "endless") {
-      if (endlessSettings.clipStart === "middle") {
+      if (endlessSettings.clipStart === "middle" && Number.isFinite(audio.duration)) {
         if (!endlessCurrentStartTime || endlessCurrentStartTime >= audio.duration) {
           endlessCurrentStartTime = getRandomMiddleStartTime(audio.duration);
         }
@@ -849,47 +2264,83 @@ function playClip() {
       }
     }
 
-    audio.currentTime = Math.max(0, startTime);
+    return Math.max(0, startTime);
+  }
 
-    audio.play().catch(err => {
-      console.error("Audio playback failed:", err);
-      if (loadTimeout) {
-        clearTimeout(loadTimeout);
-        loadTimeout = null;
-      }
-      stopWaveformLoading();
-      stopWaveform();
-      restoreButton();
-      currentAudio = null;
-    });
-  });
+  function startPlayback() {
+    if (cleanedUp || started) return;
+    if (currentAudio !== audio) return;
+    if (requestId !== currentAudioRequestId) return;
 
-  audio.addEventListener("playing", beginPlayback, { once: true });
+    started = true;
+
+    if (loadTimeout) {
+      clearTimeout(loadTimeout);
+      loadTimeout = null;
+    }
+
+    try {
+      audio.currentTime = getStartTime();
+    } catch {
+      audio.currentTime = 0;
+    }
+
+    audio.play()
+      .then(() => {
+        if (cleanedUp) return;
+        if (currentAudio !== audio) return;
+        if (requestId !== currentAudioRequestId) return;
+
+        stopWaveformLoading();
+        startWaveform(clipSeconds);
+        setPlayButtonState(true);
+        button.disabled = false;
+
+        clipTimeout = setTimeout(() => {
+          cleanup();
+        }, clipSeconds * 1000 + 150);
+      })
+      .catch(err => {
+        if (
+          err?.name === "AbortError" ||
+          cleanedUp ||
+          currentAudio !== audio ||
+          requestId !== currentAudioRequestId
+        ) {
+          return;
+        }
+
+        console.error("Audio playback failed:", song.file, err);
+        cleanup();
+      });
+  }
 
   audio.addEventListener("ended", () => {
-    if (clipTimeout) clearTimeout(clipTimeout);
-    if (loadTimeout) clearTimeout(loadTimeout);
+    cleanup();
+  }, { once: true });
 
-    if (currentAudio === audio) {
-      currentAudio = null;
-      stopWaveform();
-      restoreButton();
+  audio.addEventListener("error", (e) => {
+    if (cleanedUp || currentAudio !== audio || requestId !== currentAudioRequestId) {
+      return;
     }
-  });
 
-  audio.addEventListener("error", () => {
-    console.error("Audio failed to load:", song.file);
-    if (clipTimeout) clearTimeout(clipTimeout);
-    if (loadTimeout) clearTimeout(loadTimeout);
-    stopWaveformLoading();
-    stopWaveform();
-    restoreButton();
-    currentAudio = null;
-  });
+    console.error("Audio failed to load:", song.file, e);
+    cleanup();
+  }, { once: true });
 
-  if (audio.readyState >= 1) {
-    audio.dispatchEvent(new Event("loadedmetadata"));
+  loadTimeout = setTimeout(() => {
+    if (cleanedUp || currentAudio !== audio || requestId !== currentAudioRequestId) {
+      return;
+    }
+
+    console.error("Audio load timed out:", song.file);
+    cleanup();
+  }, 10000);
+
+  if (audio.readyState >= 2) {
+    startPlayback();
   } else {
+    audio.addEventListener("loadeddata", startPlayback, { once: true });
     audio.load();
   }
 }
@@ -1060,12 +2511,58 @@ function submitGuess() {
   const song = getCurrentSong();
 
   if (!song || !guess) return;
+  if (guess === "i did shrooms") {
+  unlockAchievement("hidden_secret_phrase");
+  }
 
   const answer = song.title.toLowerCase();
   const historyIndex = gameMode === "endless" ? 0 : songIndex;
 
-  if (guess === answer) {
-    guessHistory[historyIndex].push("correct");
+    if (guess === answer) {
+      guessHistory[historyIndex].push("correct");
+
+      const currentGuessLimit = getCurrentGuessLimit();
+      const allowLastGuessAchievement =
+       gameMode !== "endless" || currentGuessLimit > 1;
+
+      if (allowLastGuessAchievement && guessNumber === currentGuessLimit - 1) {
+        unlockAchievement("special_last_guess");
+}
+
+    if (gameMode === "daily" && songIndex === 0) {
+      unlockAchievement("daily_1");
+      incrementAchievementProgress("daily_5", 1, 5);
+      incrementAchievementProgress("daily_10", 1, 10);
+      incrementAchievementProgress("daily_50", 1, 50);
+      incrementAchievementProgress("daily_100", 1, 100);
+      incrementAchievementProgress("daily_200", 1, 200);
+      incrementAchievementProgress("daily_365", 1, 365);
+
+      if (guessNumber === 0) {
+        unlockAchievement("special_daily_first_try");
+      }
+    }
+
+    if (gameMode === "daily" && songIndex === 1) {
+      unlockAchievement("bonus_1");
+      incrementAchievementProgress("bonus_5", 1, 5);
+      incrementAchievementProgress("bonus_10", 1, 10);
+      incrementAchievementProgress("bonus_50", 1, 50);
+      incrementAchievementProgress("bonus_100", 1, 100);
+      incrementAchievementProgress("bonus_200", 1, 200);
+      incrementAchievementProgress("bonus_365", 1, 365);
+
+      if (guessNumber === 0) {
+        unlockAchievement("special_bonus_first_try");
+      }
+
+      if (guessHistory[0][0] === "correct" && guessNumber === 0) {
+        unlockAchievement("special_double_first_try");
+      }
+    }
+
+    markSongGuessedForDiscography(song.title);
+    checkFeaturedAchievements(song);
 
     const feedback = document.getElementById("feedback");
     feedback.innerText = "Correct!";
@@ -1082,6 +2579,7 @@ function submitGuess() {
 
     if (gameMode === "endless") {
   endlessScore++;
+  checkEndlessAchievements();
 
   const previousOverallBest = endlessBest;
   const previousConfigBest = getBestForSettings();
@@ -1121,6 +2619,7 @@ function submitGuess() {
   }
 
     guessHistory[historyIndex].push("wrong");
+  unlockAchievement("special_wrong_guess");
   guessNumber++;
   renderAttemptRow();
   updateWaveformPreviewMarker();
@@ -1156,36 +2655,6 @@ function submitGuess() {
   } else {
     saveProgress();
   }
-
-  if (guessNumber >= getCurrentGuessLimit()) {
-    document.getElementById("feedback").innerText = `Answer: ${song.title}`;
-    playSound(sounds.fail);
-    showAlbumArt(song);
-    stopCurrentAudio();
-    endRoundWaveformState();
-
-    if (gameMode === "endless") {
-      gameFinished = true;
-      document.getElementById("playButton").disabled = true;
-      document.getElementById("guessInput").disabled = true;
-      document.getElementById("guessButton").disabled = true;
-      showRestartRunButton();
-      saveEndlessProgress();
-      return;
-    }
-
-    finishCurrentRound();
-  } else {
-    document.getElementById("feedback").innerText = "Try again";
-  }
-
-  input.value = "";
-  document.getElementById("suggestions").innerHTML = "";
-  if (gameMode === "endless") {
-  saveEndlessProgress();
-} else {
-  saveProgress();
-}
 }
 
 function setPlayButtonLoading() {
@@ -1226,6 +2695,9 @@ function stopResultPreviewAudio() {
   if (btn1) btn1.innerText = "▶";
 }
 
+let mainRevealAudio = null;
+let mainRevealSong = null;
+
 function toggleResultSong(index) {
   const song = todaySongs[index];
   if (!song) return;
@@ -1260,6 +2732,54 @@ function toggleResultSong(index) {
   }).catch(err => {
     console.error("Result preview play failed:", err);
     stopResultPreviewAudio();
+  });
+}
+
+function stopMainRevealAudio() {
+  if (mainRevealAudio) {
+    mainRevealAudio.pause();
+    mainRevealAudio.currentTime = 0;
+    mainRevealAudio = null;
+  }
+
+  const button = document.getElementById("mainRevealPlayButton");
+  if (button) {
+    button.innerText = "▶";
+  }
+
+  mainRevealSong = null;
+}
+
+function toggleMainRevealSong() {
+  const song = getCurrentSong();
+  const button = document.getElementById("mainRevealPlayButton");
+  if (!song || !button) return;
+
+  if (mainRevealAudio && mainRevealSong?.title === song.title) {
+    if (mainRevealAudio.paused) {
+      mainRevealAudio.play().then(() => {
+        button.innerText = "⏸";
+      }).catch(() => {});
+    } else {
+      mainRevealAudio.pause();
+      button.innerText = "▶";
+    }
+    return;
+  }
+
+  stopMainRevealAudio();
+
+  mainRevealAudio = new Audio(song.file);
+  mainRevealSong = song;
+
+  mainRevealAudio.addEventListener("ended", () => {
+    stopMainRevealAudio();
+  });
+
+  mainRevealAudio.play().then(() => {
+    button.innerText = "⏸";
+  }).catch(() => {
+    stopMainRevealAudio();
   });
 }
 
@@ -1311,6 +2831,61 @@ function populateResultSongCards(isFinalRound) {
     animateReveal(bonusArt, bonusTitle, bonusCard);
   } else {
     bonusCard.style.display = "none";
+  }
+}
+
+function createResultGuessRow(history, guessLimit) {
+  const row = document.createElement("div");
+  row.className = "result-attempt-row";
+
+  for (let i = 0; i < guessLimit; i++) {
+    const box = document.createElement("div");
+    box.className = "attempt-box";
+
+    if (i < history.length) {
+      box.classList.add(history[i] === "correct" ? "correct" : "wrong");
+    } else {
+      box.classList.add("empty");
+    }
+
+    row.appendChild(box);
+  }
+
+  return row;
+}
+
+function renderResultGuessRows(isFinalRound) {
+  const mainRowWrap = document.getElementById("resultGuessRow0");
+  const bonusRowWrap = document.getElementById("resultGuessRow1");
+
+  if (mainRowWrap) {
+    mainRowWrap.innerHTML = "";
+    mainRowWrap.appendChild(createResultGuessRow(guessHistory[0], MAX_GUESSES));
+  }
+
+  if (bonusRowWrap) {
+    bonusRowWrap.innerHTML = "";
+    if (isFinalRound && bonusStarted) {
+      bonusRowWrap.appendChild(createResultGuessRow(guessHistory[1], MAX_GUESSES));
+      bonusRowWrap.style.display = "flex";
+    } else {
+      bonusRowWrap.style.display = "none";
+    }
+  }
+}
+
+function renderEndlessResultGuessRow() {
+  const mainRowWrap = document.getElementById("resultGuessRow0");
+  const bonusRowWrap = document.getElementById("resultGuessRow1");
+
+  if (mainRowWrap) {
+    mainRowWrap.innerHTML = "";
+    mainRowWrap.appendChild(createResultGuessRow(guessHistory[0], getCurrentGuessLimit()));
+  }
+
+  if (bonusRowWrap) {
+    bonusRowWrap.innerHTML = "";
+    bonusRowWrap.style.display = "none";
   }
 }
 
@@ -1372,15 +2947,30 @@ function renderAttemptRow() {
 function showAlbumArt(song) {
   const artWrap = document.getElementById("artWrap");
   const albumArt = document.getElementById("albumArt");
+  const title = document.getElementById("revealedSongTitle");
+  const spotify = document.getElementById("mainSpotifyLink");
 
   if (!song.art) {
     artWrap.style.display = "none";
     return;
   }
 
+  if (title) {
+    title.textContent = song.title;
+  }
+
+  if (spotify) {
+    if (song.spotify) {
+      spotify.href = song.spotify;
+      spotify.style.display = "inline-flex";
+    } else {
+      spotify.style.display = "none";
+    }
+  }
+
   albumArt.onload = () => {
     artWrap.style.display = "block";
-    animateReveal(albumArt, artWrap);
+    animateReveal(albumArt, artWrap, title, spotify);
   };
 
   albumArt.onerror = () => {
@@ -1398,6 +2988,7 @@ function startBonusFromModal() {
 }
 
 function startBonus() {
+  stopMainRevealAudio();
   bonusStarted = true;
   songIndex = 1;
   guessNumber = 0;
@@ -1476,6 +3067,7 @@ function updateStatsFinal() {
 
   const mainWon = didWinSong(0);
   const fullWon = didWinSong(0) && didWinSong(1);
+  const perfectDaily = guessHistory[0][0] === "correct" && guessHistory[1][0] === "correct";
 
   stats.played++;
 
@@ -1497,7 +3089,25 @@ function updateStatsFinal() {
     stats.streak = 0;
   }
 
-  stats.best = Math.max(stats.best, stats.streak);
+    stats.best = Math.max(stats.best, stats.streak);
+
+  updateProgress("streak_3", Math.min(stats.streak, 3), 3);
+  updateProgress("streak_5", Math.min(stats.streak, 5), 5);
+  updateProgress("streak_7", Math.min(stats.streak, 7), 7);
+  updateProgress("streak_30", Math.min(stats.streak, 30), 30);
+  updateProgress("streak_50", Math.min(stats.streak, 50), 50);
+  updateProgress("streak_100", Math.min(stats.streak, 100), 100);
+
+  const perfectWeekCount = perfectDaily
+    ? (isYesterdayUTC(stats.lastPlayed, todayKey)
+        ? (achievementProgress.special_perfect_week || 0) + 1
+        : 1)
+    : 0;
+
+  achievementProgress.special_perfect_week = perfectWeekCount;
+  saveAchievements();
+  updateProgress("special_perfect_week", Math.min(perfectWeekCount, 7), 7);
+
   stats.lastPlayed = todayKey;
 
   saveStats(stats);
@@ -1643,6 +3253,8 @@ function saveProgress() {
   };
 
   localStorage.setItem("thundleProgress", JSON.stringify(progress));
+  markLocalSaveUpdated();
+  scheduleCloudSave();
 }
 
 function clearProgress() {
@@ -1728,6 +3340,7 @@ function saveEndlessProgress() {
   };
 
   localStorage.setItem("thundleEndlessProgress", JSON.stringify(progress));
+  markLocalSaveUpdated();
 }
 
 function clearEndlessProgress() {
@@ -1934,7 +3547,6 @@ function prepareResults(isFinalRound) {
 
   const resultsTitle = document.getElementById("resultsTitle");
   const statsEl = document.getElementById("stats");
-  const shareGridEl = document.getElementById("shareGrid");
   const copiedMessageEl = document.getElementById("copiedMessage");
   const bonusButton = document.getElementById("bonusButton");
 
@@ -1944,7 +3556,7 @@ function prepareResults(isFinalRound) {
 
   populateResultSongCards(isFinalRound);
   renderDistributionChart(stats.distribution);
-  shareGridEl.innerText = buildShareText();
+  renderResultGuessRows(isFinalRound);
   copiedMessageEl.innerText = "";
   bonusButton.style.display = isFinalRound ? "none" : "inline-block";
 }
@@ -1977,19 +3589,17 @@ function populateEndlessResultCard() {
 function prepareEndlessResults(wonRound) {
   const resultsTitle = document.getElementById("resultsTitle");
   const statsEl = document.getElementById("stats");
-  const shareGridEl = document.getElementById("shareGrid");
   const copiedMessageEl = document.getElementById("copiedMessage");
   const bonusButton = document.getElementById("bonusButton");
 
   resultsTitle.innerText = wonRound ? "Correct!" : "Run Over";
-  statsEl.innerText =
-    `Score: ${endlessScore}\nBest: ${endlessBest}`;
+  statsEl.innerText = `Score: ${endlessScore}\nBest: ${endlessBest}`;
 
   bonusButton.style.display = "none";
 
   populateEndlessResultCard();
   renderDistributionChart([0, 0, 0, 0, 0, 0]);
-  shareGridEl.innerText = buildEndlessShareText(wonRound);
+  renderEndlessResultGuessRow();
   copiedMessageEl.innerText = "";
 }
 
@@ -2149,6 +3759,20 @@ function showShareStatus(message) {
 }
 
 async function share() {
+  unlockAchievement("sharing_1");
+    if (gameMode === "daily") {
+    updateDailyShareStreak();
+  }
+    const sharedCount = (achievementProgress.sharing_1_count || 0) + 1;
+  achievementProgress.sharing_1_count = sharedCount;
+  saveAchievements();
+
+  const mainPerfect = guessHistory[0][0] === "correct";
+  const bonusPerfect = bonusStarted && guessHistory[1][0] === "correct";
+
+  if (mainPerfect && bonusPerfect) {
+    unlockAchievement("sharing_perfect");
+  }
   const textForNativeShare = buildShareText(false);
   const textForClipboard = buildShareText(true);
 
@@ -2379,13 +4003,61 @@ function animateModeSwitch(elementsToShow = [], elementsToHide = [], onMidpoint)
   }, 220);
 }
 
+function triggerLogoZap(logoEl, event) {
+  if (!logoEl) return;
+
+  logoEl.classList.remove("logo-zap");
+  void logoEl.offsetWidth;
+  logoEl.classList.add("logo-zap");
+
+  spawnLogoSparks(logoEl, event);
+}
+
+function spawnLogoSparks(logoEl, event) {
+  const container = document.getElementById("sparkleContainer");
+  if (!container || !logoEl) return;
+
+  const rect = logoEl.getBoundingClientRect();
+  const centerX = event?.clientX ?? (rect.left + rect.width / 2);
+  const centerY = event?.clientY ?? (rect.top + rect.height / 2);
+
+  const sparkChars = ["✦", "⚡", "✧", "✦", "⚡"];
+  const sparkCount = 10;
+
+  for (let i = 0; i < sparkCount; i++) {
+    const spark = document.createElement("span");
+    spark.className = "sparkle";
+    spark.textContent = sparkChars[Math.floor(Math.random() * sparkChars.length)];
+
+    const angle = (Math.PI * 2 * i) / sparkCount + (Math.random() * 0.35);
+    const distance = 18 + Math.random() * 34;
+    const driftX = Math.cos(angle) * distance;
+    const driftY = Math.sin(angle) * distance - 8;
+
+    spark.style.left = `${centerX + driftX}px`;
+    spark.style.top = `${centerY + driftY}px`;
+    spark.style.fontSize = `${12 + Math.random() * 8}px`;
+    spark.style.animationDuration = `${520 + Math.random() * 220}ms`;
+
+    container.appendChild(spark);
+
+    setTimeout(() => {
+      spark.remove();
+    }, 850);
+  }
+}
+
 window.addEventListener("click", (event) => {
   const restartModal = document.getElementById("restartConfirmModal");
   const resultsModal = document.getElementById("resultModal");
   const settingsModal = document.getElementById("settingsModal");
   const whatsNewModal = document.getElementById("whatsNewModal");
+  const achievementsModal = document.getElementById("achievementsModal");
+  const authModal = document.getElementById("authModal");
+  const welcomeModal = document.getElementById("welcomeModal");
   const topMenu = document.getElementById("topMenuDropdown");
   const menuButton = document.getElementById("menuButton");
+  const aboutModal = document.getElementById("aboutModal");
 
   if (event.target === restartModal) {
     closeRestartConfirmModal();
@@ -2401,6 +4073,22 @@ window.addEventListener("click", (event) => {
 
   if (event.target === whatsNewModal) {
     closeWhatsNewModal();
+  }
+
+  if (event.target === achievementsModal) {
+    closeAchievementsModal();
+  }
+
+  if (event.target === authModal) {
+    closeAuthModal();
+  }
+
+  if (event.target === welcomeModal) {
+    closeWelcomeModal();
+  }
+
+  if (event.target === aboutModal) {
+    closeAboutModal();
   }
 
   if (
