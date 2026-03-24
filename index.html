@@ -46,6 +46,11 @@
     <span>Achievements</span>
   </button>
 
+  <button type="button" class="top-menu-item" onclick="openLeaderboardModal()">
+  <span class="top-menu-icon">📊</span>
+  <span>Leaderboard</span>
+</button>
+
   <button type="button" class="top-menu-item" onclick="openAboutModal()">
   <span class="top-menu-icon">ℹ️</span>
   <span>About</span>
@@ -67,7 +72,7 @@
   <span>Sync Now</span>
 </button>
 
-<button type="button" class="top-menu-item" onclick="openAuthModal()">
+<button type="button" class="top-menu-item" onclick="handleAccountButtonClick()">
   <span class="top-menu-icon">👤</span>
   <span id="accountButtonText">Sign Up / Log In</span>
 </button>
@@ -81,6 +86,16 @@
 >
   <span class="top-menu-icon">↩</span>
   <span>Log Out</span>
+</button>
+<button
+  id="devResetMenuButton"
+  type="button"
+  class="top-menu-item"
+  onclick="devResetAccountProgress()"
+  style="display:none;"
+>
+  <span class="top-menu-icon">🧪</span>
+  <span>Dev Reset Progress</span>
 </button>
   </div>
 </div>
@@ -222,7 +237,7 @@
 
     <div class="version-footer">
   <button id="versionButton" class="version-button" type="button" onclick="openWhatsNewModal()">
-    Thundle Version 2.1
+    Thundle Version 2.2
   </button>
 </div>
   </main>
@@ -298,15 +313,9 @@
     <p class="stats-text">Your best will be saved, but your current progress in this run will be lost.</p>
 
     <div class="modal-actions">
-      <button onclick="closeRestartConfirmModal()">Cancel</button>
-      <button
-  id="devResetButton"
-  class="danger-button"
-  onclick="devResetAccountProgress()"
->
-  Dev Reset Progress
-</button>
-    </div>
+  <button onclick="closeRestartConfirmModal()">Cancel</button>
+  <button class="danger-button" onclick="confirmRestartEndlessRunNow()">Restart Run</button>
+</div>
   </div>
 </div>
 
@@ -341,6 +350,7 @@
     <h2>What's New?</h2>
 
     <div class="whats-new-version-buttons">
+      <button type="button" onclick="showWhatsNewVersion('2.2')" id="whatsNewTab22">2.2</button>
       <button type="button" onclick="showWhatsNewVersion('2.1')" id="whatsNewTab21">2.1</button>
       <button type="button" onclick="showWhatsNewVersion('2.01')" id="whatsNewTab201">2.01</button>
       <button type="button" onclick="showWhatsNewVersion('2.0')" id="whatsNewTab20">2.0</button>
@@ -367,12 +377,39 @@
   </div>
 </div>
 
+<div id="leaderboardModal" class="modal" style="display:none;">
+  <div class="modal-content leaderboard-modal-content">
+    <h2>Leaderboard</h2>
+
+    <div class="leaderboard-toolbar">
+      <label for="leaderboardSort">Sort by</label>
+      <select id="leaderboardSort" onchange="changeLeaderboardSort(this.value)">
+        <option value="daily_wins">Daily Wins</option>
+        <option value="bonus_wins">Bonus Wins</option>
+        <option value="daily_streak">Daily Streak</option>
+        <option value="endless_best_normal_beginning">Endless: Normal + Beginning</option>
+        <option value="endless_best_normal_middle">Endless: Normal + Middle</option>
+        <option value="endless_best_hard_beginning">Endless: Hard + Beginning</option>
+        <option value="endless_best_hard_middle">Endless: Hard + Middle</option>
+        <option value="achievements_unlocked">Achievements Unlocked</option>
+      </select>
+    </div>
+
+    <div id="leaderboardStatus" class="stats-text">Loading leaderboard...</div>
+    <div id="leaderboardList" class="leaderboard-list"></div>
+
+    <div class="modal-actions">
+      <button onclick="closeLeaderboardModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="aboutModal" class="modal" style="display:none;">
   <div class="modal-content about-modal-content">
     <div class="about-header">
       <h2>About Thundle</h2>
       <p class="about-subtitle">Music game • band hub • roadmap • updates</p>
-      <p class="about-version">Version 2.1</p>
+      <p class="about-version">Version 2.2</p>
     </div>
 
     <div class="about-cards-grid">
@@ -523,11 +560,12 @@
           <span class="about-section-chevron">⌄</span>
         </button>
         <div class="about-section-body">
-          <div class="about-whats-new-tabs">
-            <button type="button" onclick="showAboutWhatsNewVersion('2.1')" id="aboutWhatsNewTab21">2.1</button>
-            <button type="button" onclick="showAboutWhatsNewVersion('2.01')" id="aboutWhatsNewTab201">2.01</button>
-            <button type="button" onclick="showAboutWhatsNewVersion('2.0')" id="aboutWhatsNewTab20">2.0</button>
-            <button type="button" onclick="showAboutWhatsNewVersion('1.0')" id="aboutWhatsNewTab10">1.0</button>
+        <div class="about-whats-new-tabs">
+          <button type="button" onclick="showAboutWhatsNewVersion('2.2')" id="aboutWhatsNewTab22">2.2</button>
+          <button type="button" onclick="showAboutWhatsNewVersion('2.1')" id="aboutWhatsNewTab21">2.1</button>
+          <button type="button" onclick="showAboutWhatsNewVersion('2.01')" id="aboutWhatsNewTab201">2.01</button>
+          <button type="button" onclick="showAboutWhatsNewVersion('2.0')" id="aboutWhatsNewTab20">2.0</button>
+          <button type="button" onclick="showAboutWhatsNewVersion('1.0')" id="aboutWhatsNewTab10">1.0</button>
         </div>
           <div id="aboutWhatsNewContent" class="about-whats-new-content"></div>
         </div>
@@ -562,6 +600,145 @@
   </div>
 </div>
 
+<div id="profileModal" class="modal" style="display:none;">
+  <div class="modal-content profile-modal-content">
+    <div class="profile-modal-header">
+      <h2>Profile</h2>
+    </div>
+
+    <div class="profile-modal-body">
+      <div class="profile-header">
+        <img id="profileAvatarImage" class="profile-avatar-large" src="branding/avatars/default.png" alt="Profile picture" />
+
+        <div class="profile-identity">
+          <p class="profile-identity-label">Username</p>
+          <p id="profileUsernameText" class="profile-identity-value">-</p>
+
+          <p class="profile-identity-label">Email</p>
+          <p id="profileEmailText" class="profile-identity-value">-</p>
+        </div>
+      </div>
+
+      <div class="profile-featured-album">
+        <p class="profile-section-title">Favorite Album</p>
+        <img id="profileFavoriteAlbumArt" class="profile-featured-album-art" src="art/the-ep.jpg" alt="Favorite album art" />
+        <p id="profileFavoriteAlbumTitle" class="profile-featured-album-title">ThunderPunch! The EP!</p>
+      </div>
+
+      <div class="profile-form-section">
+        <label class="settings-label" for="favoriteSongSearchInput">Favorite Song</label>
+
+        <div class="profile-song-picker">
+          <input
+            id="favoriteSongSearchInput"
+            type="text"
+            placeholder="Search songs"
+            autocomplete="off"
+            aria-label="Search favorite song"
+            oninput="filterFavoriteSongOptions(this.value)"
+            onfocus="openFavoriteSongDropdown()"
+          />
+          <div id="favoriteSongDropdown" class="profile-song-dropdown"></div>
+        </div>
+
+        <p id="favoriteSongSelectedText" class="profile-selected-value">No favorite song selected</p>
+      </div>
+
+      <div class="profile-form-section">
+        <label class="settings-label">Favorite Album</label>
+
+        <button
+          id="favoriteAlbumDropdownButton"
+          type="button"
+          class="profile-album-dropdown-button"
+          onclick="toggleFavoriteAlbumDropdown()"
+        >
+          <img id="favoriteAlbumDropdownPreviewArt" class="profile-album-dropdown-preview-art" src="art/the-ep.jpg" alt="Selected album art" />
+          <span id="favoriteAlbumDropdownPreviewTitle">ThunderPunch! The EP!</span>
+          <span class="profile-album-dropdown-caret">⌄</span>
+        </button>
+
+        <div id="favoriteAlbumDropdown" class="profile-album-dropdown" style="display:none;">
+          <button type="button" class="profile-album-option" onclick="selectFavoriteAlbum('the_ep')">
+            <img src="art/the-ep.jpg" alt="ThunderPunch! The EP!" />
+            <span>ThunderPunch! The EP!</span>
+          </button>
+
+          <button type="button" class="profile-album-option" onclick="selectFavoriteAlbum('diamond_blisters')">
+            <img src="art/diamond-blisters.jpg" alt="Diamond Blisters" />
+            <span>Diamond Blisters</span>
+          </button>
+
+          <button type="button" class="profile-album-option" onclick="selectFavoriteAlbum('space_cat')">
+            <img src="art/space-cat.jpg" alt="Space Cat" />
+            <span>Space Cat</span>
+          </button>
+
+          <button type="button" class="profile-album-option" onclick="selectFavoriteAlbum('stupid_silly_happy_songs')">
+            <img src="art/stupid-silly-happy-songs.png" alt="Stupid, Silly, Happy Songs" />
+            <span>Stupid, Silly, Happy Songs</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="profile-stats-section">
+        <p class="profile-section-title">Stats</p>
+
+        <div class="profile-stats-grid">
+          <div class="profile-stat-card">
+            <span class="profile-stat-label">Daily Wins</span>
+            <span id="profileStatDailyWins" class="profile-stat-value">0</span>
+          </div>
+
+          <div class="profile-stat-card">
+            <span class="profile-stat-label">Bonus Wins</span>
+            <span id="profileStatBonusWins" class="profile-stat-value">0</span>
+          </div>
+
+          <div class="profile-stat-card">
+            <span class="profile-stat-label">Daily Streak</span>
+            <span id="profileStatDailyStreak" class="profile-stat-value">0</span>
+          </div>
+
+          <div class="profile-stat-card">
+            <span class="profile-stat-label">Achievements</span>
+            <span id="profileStatAchievements" class="profile-stat-value">0</span>
+          </div>
+
+          <div class="profile-stat-card">
+            <span class="profile-stat-label">Logo Clicks</span>
+            <span id="profileStatLogoClicks" class="profile-stat-value">0</span>
+          </div>
+
+          <div class="profile-stat-card">
+            <span class="profile-stat-label">Endless: Normal + Beginning</span>
+            <span id="profileStatEndlessNB" class="profile-stat-value">0</span>
+          </div>
+
+          <div class="profile-stat-card">
+            <span class="profile-stat-label">Endless: Normal + Middle</span>
+            <span id="profileStatEndlessNM" class="profile-stat-value">0</span>
+          </div>
+
+          <div class="profile-stat-card">
+            <span class="profile-stat-label">Endless: Hard + Beginning</span>
+            <span id="profileStatEndlessHB" class="profile-stat-value">0</span>
+          </div>
+
+          <div class="profile-stat-card">
+            <span class="profile-stat-label">Endless: Hard + Middle</span>
+            <span id="profileStatEndlessHM" class="profile-stat-value">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="profile-modal-footer modal-actions">
+      <button id="profileSaveCloseButton" onclick="handleProfileSaveClose()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="authModal" class="modal" style="display:none;">
   <div class="modal-content auth-modal-content">
     <h2>Account</h2>
@@ -587,7 +764,6 @@
     <div class="modal-actions auth-modal-actions">
   <button id="authSubmitButton" onclick="submitAuth()">Log In</button>
   <button onclick="closeAuthModal()">Close</button>
-  <button class="danger-button" onclick="devResetAccountProgress()">Dev Reset Progress</button>
 </div>
   </div>
 </div>

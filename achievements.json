@@ -188,7 +188,7 @@
     "categorySort": 3,
     "category": "Sharing",
     "rarity": "Uncommon",
-    "showProgressBar": true,
+    "showProgressBar": false,
     "hidden": false
   },
   {
@@ -598,5 +598,17 @@
     "rarity": "Legendary",
     "showProgressBar": false,
     "hidden": true
+  },
+  {
+    "id": "hidden_lightning_kicks",
+    "achievementNumber": 51,
+    "fileName": "hidden_lightning_kicks.png",
+    "title": "Lightning Kicks",
+    "description": "Click on the Thundle logo 100 times in a row",
+    "categorySort": 6,
+    "category": "Special",
+    "rarity": "Rare",
+    "showProgressBar": true,
+    "hidden": true 
   }
 ]
