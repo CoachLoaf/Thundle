@@ -23,7 +23,105 @@
 
   <main class="page">
     <header class="hero">
-      <div class="top-right-menu">
+      <div class="hero-topbar">
+        <div class="top-left-account">
+          <button
+            id="guestAuthButton"
+            class="guest-auth-button"
+            type="button"
+            onclick="openAuthModal()"
+            style="display:none;"
+          >
+            Log In / Sign Up
+          </button>
+
+          <div id="profileChipWrap" class="profile-chip-wrap">
+            <button
+              id="profileChipButton"
+              class="profile-chip-avatar-button"
+              type="button"
+              aria-label="Open account menu"
+              aria-expanded="false"
+              onclick="toggleProfileMenu()"
+            >
+              <img
+                id="topbarAvatarImage"
+                class="profile-chip-avatar"
+                src="branding/avatars/default.png"
+                alt="Profile picture"
+              />
+              <span class="profile-chip-caret">⌄</span>
+            </button>
+
+            <div class="profile-chip-text">
+              <div id="topbarUsernameText" class="profile-chip-username">Guest</div>
+              <div id="topbarSyncText" class="profile-chip-sync">Playing as guest</div>
+            </div>
+          </div>
+
+          <div id="profileMenuDropdown" class="profile-menu-dropdown" style="display:none;">
+            <div id="profileMenuAccountText" class="account-status-text">Not signed in</div>
+            <div id="profileMenuSyncText" class="sync-status-text">No cloud sync</div>
+
+            <div class="top-menu-divider"></div>
+
+            <button
+              id="profileMenuSyncNowButton"
+              type="button"
+              class="top-menu-item"
+              onclick="manualCloudSync()"
+              style="display:none;"
+            >
+              <span class="top-menu-icon">☁</span>
+              <span>Sync Now</span>
+            </button>
+
+            <button
+              id="profileMenuProfileButton"
+              type="button"
+              class="top-menu-item"
+              onclick="openProfileFromProfileMenu()"
+              style="display:none;"
+            >
+              <span class="top-menu-icon">🪪</span>
+              <span>Profile</span>
+            </button>
+
+            <button
+              id="profileMenuAccountButton"
+              type="button"
+              class="top-menu-item"
+              onclick="handleAccountButtonClick()"
+            >
+              <span class="top-menu-icon">👤</span>
+              <span id="profileMenuAccountButtonText">Sign Up / Log In</span>
+            </button>
+
+            <button
+              id="profileMenuLogoutButton"
+              type="button"
+              class="top-menu-item"
+              onclick="handleLogoutFromProfileMenu()"
+              style="display:none;"
+            >
+              <span class="top-menu-icon">↩</span>
+              <span>Log Out</span>
+            </button>
+
+            <button
+              id="profileMenuDevResetButton"
+              type="button"
+              class="top-menu-item danger-menu-item"
+              onclick="devResetAccountProgress()"
+              style="display:none;"
+            >
+              <span class="top-menu-icon">🧨</span>
+              <span>Dev Reset Progress</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="top-right-menu">
   <button
     id="menuButton"
     class="menu-button"
@@ -56,54 +154,14 @@
   <span>About</span>
 </button>
 
-  <div class="top-menu-divider"></div>
 
-  <div id="accountStatusText" class="account-status-text">Not signed in</div>
-<div id="syncStatusText" class="sync-status-text">No cloud sync</div>
-
-<button
-  id="syncNowMenuButton"
-  type="button"
-  class="top-menu-item"
-  onclick="manualCloudSync()"
-  style="display:none;"
->
-  <span class="top-menu-icon">☁</span>
-  <span>Sync Now</span>
-</button>
-
-<button type="button" class="top-menu-item" onclick="handleAccountButtonClick()">
-  <span class="top-menu-icon">👤</span>
-  <span id="accountButtonText">Sign Up / Log In</span>
-</button>
-
-<button
-  id="logoutMenuButton"
-  type="button"
-  class="top-menu-item"
-  onclick="logoutAccount()"
-  style="display:none;"
->
-  <span class="top-menu-icon">↩</span>
-  <span>Log Out</span>
-</button>
-<button
-  id="devResetMenuButton"
-  type="button"
-  class="top-menu-item"
-  onclick="devResetAccountProgress()"
-  style="display:none;"
->
-  <span class="top-menu-icon">🧪</span>
-  <span>Dev Reset Progress</span>
-</button>
   </div>
 </div>
+      </div>
 
       <h1 class="game-logo" onclick="triggerLogoZap(this, event)">THUNDLE</h1>
       <h2 id="puzzleNumber">#0</h2>
       <p class="subtitle">Guess the ThunderPunch! song.</p>
-      <p id="cloudBadge" class="cloud-badge">Playing as guest</p>
 
   <div class="mode-switch">
         <button id="dailyModeButton" onclick="setMode('daily')">Daily</button>
@@ -236,8 +294,8 @@
     </section>
 
     <div class="version-footer">
-  <button id="versionButton" class="version-button" type="button" onclick="openWhatsNewModal()">
-    Thundle Version 2.2
+  <button id="versionButton" class="version-button" type="button" onclick="openAboutAndFocusSection('aboutWhatsNewSection')">
+    Thundle Version 2.21
   </button>
 </div>
   </main>
@@ -379,26 +437,31 @@
 
 <div id="leaderboardModal" class="modal" style="display:none;">
   <div class="modal-content leaderboard-modal-content">
-    <h2>Leaderboard</h2>
+    <div class="leaderboard-modal-header">
+      <h2>Leaderboard</h2>
 
-    <div class="leaderboard-toolbar">
-      <label for="leaderboardSort">Sort by</label>
-      <select id="leaderboardSort" onchange="changeLeaderboardSort(this.value)">
-        <option value="daily_wins">Daily Wins</option>
-        <option value="bonus_wins">Bonus Wins</option>
-        <option value="daily_streak">Daily Streak</option>
-        <option value="endless_best_normal_beginning">Endless: Normal + Beginning</option>
-        <option value="endless_best_normal_middle">Endless: Normal + Middle</option>
-        <option value="endless_best_hard_beginning">Endless: Hard + Beginning</option>
-        <option value="endless_best_hard_middle">Endless: Hard + Middle</option>
-        <option value="achievements_unlocked">Achievements Unlocked</option>
-      </select>
+      <div class="leaderboard-toolbar">
+        <label for="leaderboardSort">Sort by</label>
+        <select id="leaderboardSort" onchange="changeLeaderboardSort(this.value)">
+          <option value="daily_wins">Daily Wins</option>
+          <option value="bonus_wins">Bonus Wins</option>
+          <option value="daily_streak">Daily Streak</option>
+          <option value="endless_best_normal_beginning">Endless: Normal + Beginning</option>
+          <option value="endless_best_normal_middle">Endless: Normal + Middle</option>
+          <option value="endless_best_hard_beginning">Endless: Hard + Beginning</option>
+          <option value="endless_best_hard_middle">Endless: Hard + Middle</option>
+          <option value="achievements_unlocked">Achievements Unlocked</option>
+        </select>
+      </div>
+
+      <div id="leaderboardStatus" class="stats-text">Loading leaderboard...</div>
     </div>
 
-    <div id="leaderboardStatus" class="stats-text">Loading leaderboard...</div>
-    <div id="leaderboardList" class="leaderboard-list"></div>
+    <div class="leaderboard-modal-body">
+      <div id="leaderboardList" class="leaderboard-list"></div>
+    </div>
 
-    <div class="modal-actions">
+    <div class="leaderboard-modal-footer modal-actions">
       <button onclick="closeLeaderboardModal()">Close</button>
     </div>
   </div>
@@ -406,13 +469,16 @@
 
 <div id="aboutModal" class="modal" style="display:none;">
   <div class="modal-content about-modal-content">
-    <div class="about-header">
-      <h2>About Thundle</h2>
-      <p class="about-subtitle">Music game • band hub • roadmap • updates</p>
-      <p class="about-version">Version 2.2</p>
+    <div class="about-modal-header">
+      <div class="about-header">
+        <h2>About Thundle</h2>
+        <p class="about-subtitle">Music game • band hub • roadmap • updates</p>
+        <p class="about-version">Version 2.21</p>
+      </div>
     </div>
 
-    <div class="about-cards-grid">
+    <div class="about-modal-body">
+      <div class="about-cards-grid">
       <button class="about-nav-card" type="button" onclick="toggleAboutSection('aboutBandSection')">
         <span class="about-nav-icon">🎸</span>
         <span>Band</span>
@@ -457,9 +523,8 @@
         <span class="about-nav-icon">📬</span>
         <span>Feedback</span>
       </button>
-    </div>
-
-    <div class="about-sections-wrap">
+      </div>
+      <div class="about-sections-wrap">
       <section id="aboutBandSection" class="about-section-panel is-open">
         <button class="about-section-header" type="button" onclick="toggleAboutSection('aboutBandSection')">
           <span>🎸 About the Band</span>
@@ -560,13 +625,15 @@
           <span class="about-section-chevron">⌄</span>
         </button>
         <div class="about-section-body">
-        <div class="about-whats-new-tabs">
-          <button type="button" onclick="showAboutWhatsNewVersion('2.2')" id="aboutWhatsNewTab22">2.2</button>
-          <button type="button" onclick="showAboutWhatsNewVersion('2.1')" id="aboutWhatsNewTab21">2.1</button>
-          <button type="button" onclick="showAboutWhatsNewVersion('2.01')" id="aboutWhatsNewTab201">2.01</button>
-          <button type="button" onclick="showAboutWhatsNewVersion('2.0')" id="aboutWhatsNewTab20">2.0</button>
-          <button type="button" onclick="showAboutWhatsNewVersion('1.0')" id="aboutWhatsNewTab10">1.0</button>
-        </div>
+          <div class="about-whatsnew-tabs">
+            <button type="button" onclick="showAboutWhatsNewVersion('2.21')" id="aboutWhatsNewTab221">2.21</button>
+            <button type="button" onclick="showAboutWhatsNewVersion('2.2')" id="aboutWhatsNewTab22">2.2</button>
+            <button type="button" onclick="showAboutWhatsNewVersion('2.1')" id="aboutWhatsNewTab21">2.1</button>
+            <button type="button" onclick="showAboutWhatsNewVersion('2.01')" id="aboutWhatsNewTab201">2.01</button>
+            <button type="button" onclick="showAboutWhatsNewVersion('2.0')" id="aboutWhatsNewTab20">2.0</button>
+            <button type="button" onclick="showAboutWhatsNewVersion('1.0')" id="aboutWhatsNewTab10">1.0</button>
+          </div>
+
           <div id="aboutWhatsNewContent" class="about-whats-new-content"></div>
         </div>
       </section>
@@ -591,12 +658,13 @@
           <p>Found a bug? Have a feature idea? Want to yell about your favorite ThunderPunch! song?</p>
           <p>Email me: jakehatfield820@gmail.com</p>
         </div>
-      </section>
+            </section>
     </div>
+  </div>
 
-    <div class="modal-actions">
-      <button onclick="closeAboutModal()">Close</button>
-    </div>
+  <div class="about-modal-footer modal-actions">
+    <button onclick="closeAboutModal()">Close</button>
+  </div>
   </div>
 </div>
 

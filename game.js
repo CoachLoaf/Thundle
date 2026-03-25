@@ -73,6 +73,8 @@ let achievementToastShowing = false;
 let totalLogoClickCount = Number(localStorage.getItem("thundleTotalLogoClicks") || 0);
 let logoClickStreakCount = 0;
 let lightningKicksTriggeredThisLoad = false;
+let logoClickSaveTimer = null;
+let logoProgressSaveTimer = null;
 const FEATURED_SONGS = {
   hidden_caleb: [
     "6-7-8-9-10",
@@ -160,6 +162,8 @@ let endlessRunStarted = false;
 let endlessCurrentStartTime = 0;
 let waveformPreviewShown = false;
 
+const SOUND_POOL_SIZE = 4;
+
 const sounds = {
   correct: new Audio("sounds/correct.mp3"),
   incorrect: new Audio("sounds/incorrect.mp3"),
@@ -184,6 +188,121 @@ const zapVariations = [
   "sounds/logo-zap-5.mp3"
 ];
 
+// Add these files to your /sounds folder.
+// You can rename the files if you want, just keep the paths updated here.
+const logoMilestoneSounds = {
+  10: "sounds/logo-10.mp3",
+  20: "sounds/logo-20.mp3",
+  30: "sounds/logo-30.mp3",
+  40: "sounds/logo-40.mp3",
+  50: "sounds/logo-50.mp3",
+  60: "sounds/logo-60.mp3",
+  70: "sounds/logo-70.mp3",
+  80: "sounds/logo-80.mp3",
+  90: "sounds/logo-90.mp3",
+  100: "sounds/logo-100-finale.mp3"
+};
+
+const pooledSfxSources = [
+  ...clickVariations,
+  ...zapVariations,
+  ...Object.values(logoMilestoneSounds)
+];
+
+const sfxPools = {};
+const sfxPoolIndexes = {};
+let sfxUnlocked = false;
+
+function buildSfxPools() {
+  pooledSfxSources.forEach(src => {
+    sfxPools[src] = Array.from({ length: SOUND_POOL_SIZE }, () => {
+      const audio = new Audio(src);
+      audio.preload = "auto";
+      audio.load();
+      return audio;
+    });
+    sfxPoolIndexes[src] = 0;
+  });
+}
+
+function getPooledSfx(src) {
+  const pool = sfxPools[src];
+  if (!pool || !pool.length) return null;
+
+  const index = sfxPoolIndexes[src] || 0;
+  const sound = pool[index];
+  sfxPoolIndexes[src] = (index + 1) % pool.length;
+  return sound;
+}
+
+function unlockSfx() {
+  if (sfxUnlocked) return;
+  sfxUnlocked = true;
+
+  const allSounds = [
+    ...Object.values(sounds),
+    ...Object.values(sfxPools).flat()
+  ];
+
+  allSounds.forEach(sound => {
+    try {
+      const oldVolume = sound.volume;
+      sound.volume = 0;
+
+      const playPromise = sound.play();
+      if (playPromise && typeof playPromise.then === "function") {
+        playPromise
+          .then(() => {
+            sound.pause();
+            sound.currentTime = 0;
+            sound.volume = oldVolume;
+          })
+          .catch(() => {
+            sound.volume = oldVolume;
+          });
+      } else {
+        sound.pause();
+        sound.currentTime = 0;
+        sound.volume = oldVolume;
+      }
+    } catch {}
+  });
+}
+
+function scheduleLogoClickSave() {
+  clearTimeout(logoClickSaveTimer);
+  logoClickSaveTimer = setTimeout(() => {
+    localStorage.setItem("thundleTotalLogoClicks", String(totalLogoClickCount));
+    renderProfileModalIfOpen();
+  }, 2500);
+}
+
+function scheduleLogoProgressSave() {
+  clearTimeout(logoProgressSaveTimer);
+  logoProgressSaveTimer = setTimeout(() => {
+    if (!achievements["hidden_lightning_kicks"]) {
+      updateProgress("hidden_lightning_kicks", Math.min(logoClickStreakCount, 100), 100);
+    }
+  }, 2500);
+}
+
+function playLogoMilestoneSound() {
+  const milestone = Math.min(logoClickStreakCount, 100);
+
+  if (milestone % 10 !== 0) return;
+
+  const src = logoMilestoneSounds[milestone];
+  if (!src) return;
+
+  playPitchedSfx(src, {
+    volumeMultiplier: milestone === 100 ? 0.45 : 0.28,
+    pitchMin: 0.995,
+    pitchMax: 1.005
+  });
+}
+
+buildSfxPools();
+
 function getRandomFromArray(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -192,14 +311,16 @@ function handleLogoClick() {
   totalLogoClickCount += 1;
   logoClickStreakCount += 1;
 
-  localStorage.setItem("thundleTotalLogoClicks", String(totalLogoClickCount));
+  scheduleLogoClickSave();
+  scheduleLogoProgressSave();
 
-  updateProgress("hidden_lightning_kicks", Math.min(logoClickStreakCount, 100), 100);
   updateLogoClickVisualState();
   renderProfileModalIfOpen();
+  playLogoMilestoneSound();
 
   if (logoClickStreakCount >= 100 && !lightningKicksTriggeredThisLoad) {
     lightningKicksTriggeredThisLoad = true;
+    clearTimeout(logoProgressSaveTimer);
     unlockAchievement("hidden_lightning_kicks");
     triggerLightningKicksFinale();
   }
@@ -328,8 +449,44 @@ function updateSettingsUI() {
   }
 }
 
+function closeProfileMenu() {
+  const dropdown = document.getElementById("profileMenuDropdown");
+  const button = document.getElementById("profileChipButton");
+
+  if (dropdown) dropdown.style.display = "none";
+  if (button) button.setAttribute("aria-expanded", "false");
+}
+
+function toggleProfileMenu() {
+  const dropdown = document.getElementById("profileMenuDropdown");
+  const button = document.getElementById("profileChipButton");
+  const topMenu = document.getElementById("topMenuDropdown");
+  const topMenuButton = document.getElementById("menuButton");
+
+  if (!dropdown || !button) return;
+
+  const willOpen = dropdown.style.display !== "block";
+
+  if (topMenu) topMenu.style.display = "none";
+  if (topMenuButton) topMenuButton.setAttribute("aria-expanded", "false");
+
+  dropdown.style.display = willOpen ? "block" : "none";
+  button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+}
+
+function openProfileFromProfileMenu() {
+  closeProfileMenu();
+  openProfileModal();
+}
+
+async function handleLogoutFromProfileMenu() {
+  closeProfileMenu();
+  await logoutAccount();
+}
+
 function toggleTopMenu() {
   const dropdown = document.getElementById("topMenuDropdown");
+  closeProfileMenu();
   const button = document.getElementById("menuButton");
   if (!dropdown || !button) return;
 
@@ -374,6 +531,22 @@ function openAchievementsFromMenu() {
 }
 
 const WHATS_NEW_CONTENT = {
+  "2.21": `
+  <h3>Version 2.21</h3>
+  <ul>
+    <li>Added a new top-left account badge with profile picture, username, and cloud sync status.</li>
+    <li>Signed-out players now see a simple Log In / Sign Up button instead of the profile dropdown.</li>
+    <li>Fixed major performance issues caused by repeated logo clicking.</li>
+    <li>Logo click progress now saves after a delay instead of after every click.</li>
+    <li>Improved mobile sound effect behavior and reduced delayed/cut-off playback.</li>
+    <li>Added support for special logo click milestone sound effects.</li>
+    <li>Leaderboard now properly handles ties, so equal scores share the same placement.</li>
+    <li>About page navigation now opens one section at a time and scrolls directly to it.</li>
+    <li>Clicking the version number now opens the About page directly to What’s New.</li>
+    <li>Fixed sticky footer/header layout issues in the About and Leaderboard modals.</li>
+    <li>Improved save syncing behavior for certain stats and achievement-related progress.</li>
+  </ul>
+`,
   "2.2": `
   <h3>Version 2.2</h3>
   <ul>
@@ -1090,91 +1263,101 @@ function renderLeaderboardRows(rows) {
 
   const currentUsername = (currentUser?.user_metadata?.username || "").trim().toLowerCase();
 
+  let previousScore = null;
+  let displayRank = 0;
+
   rows.forEach((row, index) => {
-  const rowUsername = (row.username || "").trim().toLowerCase();
-  const isYou = !!currentUsername && rowUsername === currentUsername;
-  const isDev = row.username === "DEV_CoachLoaf";
+    const score = Number(row?.[leaderboardSortKey] ?? 0);
 
-  const item = document.createElement("div");
-  item.className = "leaderboard-row";
+    if (previousScore === null || score !== previousScore) {
+      displayRank = index + 1;
+      previousScore = score;
+    }
 
-  if (isYou) {
-    item.classList.add("leaderboard-row-you");
-  }
+    const rowUsername = (row.username || "").trim().toLowerCase();
+    const isYou = !!currentUsername && rowUsername === currentUsername;
+    const isDev = row.username === "DEV_CoachLoaf";
 
-  if (index === 0) item.classList.add("leaderboard-row-gold");
-  if (index === 1) item.classList.add("leaderboard-row-silver");
-  if (index === 2) item.classList.add("leaderboard-row-bronze");
+    const item = document.createElement("div");
+    item.className = "leaderboard-row";
 
-  item.innerHTML = `
-    <div class="leaderboard-rank">#${index + 1}</div>
+    if (isYou) {
+      item.classList.add("leaderboard-row-you");
+    }
 
-    <img
-      class="leaderboard-avatar"
-      src="${getAvatarUrl(row.avatar || "default")}"
-      alt="${row.username || "Player"} avatar"
-    />
+    if (displayRank === 1) item.classList.add("leaderboard-row-gold");
+    if (displayRank === 2) item.classList.add("leaderboard-row-silver");
+    if (displayRank === 3) item.classList.add("leaderboard-row-bronze");
 
-    <div class="leaderboard-main">
-      <div class="leaderboard-top-row">
-        <div class="leaderboard-username-row">
-          <div class="leaderboard-username ${isDev ? "leaderboard-dev" : ""}">
-            ${row.username || "Unknown Player"}
-            ${isDev ? `<span class="leaderboard-dev-badge">⚡ DEV</span>` : ""}
+    item.innerHTML = `
+      <div class="leaderboard-rank">#${displayRank}</div>
+
+      <img
+        class="leaderboard-avatar"
+        src="${getAvatarUrl(row.avatar || "default")}"
+        alt="${row.username || "Player"} avatar"
+      />
+
+      <div class="leaderboard-main">
+        <div class="leaderboard-top-row">
+          <div class="leaderboard-username-row">
+            <div class="leaderboard-username ${isDev ? "leaderboard-dev" : ""}">
+              ${row.username || "Unknown Player"}
+              ${isDev ? `<span class="leaderboard-dev-badge">⚡ DEV</span>` : ""}
+            </div>
+            ${isYou ? `<span class="leaderboard-you-badge">You</span>` : ""}
           </div>
-          ${isYou ? `<span class="leaderboard-you-badge">You</span>` : ""}
+
+          <div class="leaderboard-highlight">
+            ${score}
+          </div>
         </div>
 
-        <div class="leaderboard-highlight">
-          ${row[leaderboardSortKey] ?? 0}
+        <div class="leaderboard-stats-grid">
+          <span class="${leaderboardSortKey === "daily_wins" ? "leaderboard-stat-active" : ""}">
+            <strong>Daily:</strong> ${row.daily_wins ?? 0}
+          </span>
+
+          <span class="${leaderboardSortKey === "bonus_wins" ? "leaderboard-stat-active" : ""}">
+            <strong>Bonus:</strong> ${row.bonus_wins ?? 0}
+          </span>
+
+          <span class="${leaderboardSortKey === "daily_streak" ? "leaderboard-stat-active" : ""}">
+            <strong>Streak:</strong> ${row.daily_streak ?? 0}
+          </span>
+
+          <span class="${leaderboardSortKey === "endless_best_normal_beginning" ? "leaderboard-stat-active" : ""}">
+            <strong>ENB:</strong> ${row.endless_best_normal_beginning ?? 0}
+          </span>
+
+          <span class="${leaderboardSortKey === "endless_best_normal_middle" ? "leaderboard-stat-active" : ""}">
+            <strong>ENM:</strong> ${row.endless_best_normal_middle ?? 0}
+          </span>
+
+          <span class="${leaderboardSortKey === "endless_best_hard_beginning" ? "leaderboard-stat-active" : ""}">
+            <strong>EHB:</strong> ${row.endless_best_hard_beginning ?? 0}
+          </span>
+
+          <span class="${leaderboardSortKey === "endless_best_hard_middle" ? "leaderboard-stat-active" : ""}">
+            <strong>EHM:</strong> ${row.endless_best_hard_middle ?? 0}
+          </span>
+
+          <span class="${leaderboardSortKey === "achievements_unlocked" ? "leaderboard-stat-active" : ""}">
+            <strong>Ach.:</strong> ${row.achievements_unlocked ?? 0}
+          </span>
         </div>
       </div>
+    `;
 
-      <div class="leaderboard-stats-grid">
-        <span class="${leaderboardSortKey === "daily_wins" ? "leaderboard-stat-active" : ""}">
-          <strong>Daily:</strong> ${row.daily_wins ?? 0}
-        </span>
-
-        <span class="${leaderboardSortKey === "bonus_wins" ? "leaderboard-stat-active" : ""}">
-          <strong>Bonus:</strong> ${row.bonus_wins ?? 0}
-        </span>
-
-        <span class="${leaderboardSortKey === "daily_streak" ? "leaderboard-stat-active" : ""}">
-          <strong>Streak:</strong> ${row.daily_streak ?? 0}
-        </span>
-
-        <span class="${leaderboardSortKey === "endless_best_normal_beginning" ? "leaderboard-stat-active" : ""}">
-          <strong>NB:</strong> ${row.endless_best_normal_beginning ?? 0}
-        </span>
-
-        <span class="${leaderboardSortKey === "endless_best_normal_middle" ? "leaderboard-stat-active" : ""}">
-          <strong>NM:</strong> ${row.endless_best_normal_middle ?? 0}
-        </span>
-
-        <span class="${leaderboardSortKey === "endless_best_hard_beginning" ? "leaderboard-stat-active" : ""}">
-          <strong>HB:</strong> ${row.endless_best_hard_beginning ?? 0}
-        </span>
-
-        <span class="${leaderboardSortKey === "endless_best_hard_middle" ? "leaderboard-stat-active" : ""}">
-          <strong>HM:</strong> ${row.endless_best_hard_middle ?? 0}
-        </span>
-
-        <span class="${leaderboardSortKey === "achievements_unlocked" ? "leaderboard-stat-active" : ""}">
-          <strong>Ach.:</strong> ${row.achievements_unlocked ?? 0}
-        </span>
-      </div>
-    </div>
-  `;
-
-  list.appendChild(item);
-});
+    list.appendChild(item);
+  });
 }
 
 function openAboutModal() {
   const modal = document.getElementById("aboutModal");
   if (!modal) return;
 
-  showAboutWhatsNewVersion("2.2");
+  showAboutWhatsNewVersion("2.21");
 
   modal.style.display = "flex";
   document.body.style.overflow = "hidden";
@@ -1201,11 +1384,37 @@ function closeAboutModal() {
   }, 200);
 }
 
-function toggleAboutSection(sectionId) {
+function openAboutAndFocusSection(sectionId) {
+  openAboutModal();
+
+  setTimeout(() => {
+    toggleAboutSection(sectionId, true);
+  }, 220);
+}
+
+function toggleAboutSection(sectionId, forceOpen = null) {
   const section = document.getElementById(sectionId);
   if (!section) return;
 
-  section.classList.toggle("is-open");
+  const allSections = document.querySelectorAll(".about-section-panel");
+  const shouldOpen = forceOpen === null ? !section.classList.contains("is-open") : forceOpen;
+
+  allSections.forEach(panel => {
+    if (panel.id === sectionId) {
+      panel.classList.toggle("is-open", shouldOpen);
+    } else {
+      panel.classList.remove("is-open");
+    }
+  });
+
+  if (shouldOpen) {
+    setTimeout(() => {
+      section.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }, 40);
+  }
 }
 
 function showAboutWhatsNewVersion(version) {
@@ -1214,14 +1423,16 @@ function showAboutWhatsNewVersion(version) {
 
   content.innerHTML = WHATS_NEW_CONTENT[version] || "<p>No update notes yet.</p>";
 
+  const tab221 = document.getElementById("aboutWhatsNewTab221");
   const tab22 = document.getElementById("aboutWhatsNewTab22");
   const tab21 = document.getElementById("aboutWhatsNewTab21");
   const tab201 = document.getElementById("aboutWhatsNewTab201");
   const tab20 = document.getElementById("aboutWhatsNewTab20");
   const tab10 = document.getElementById("aboutWhatsNewTab10");
 
-  [tab22, tab21, tab201, tab20, tab10].forEach(btn => btn?.classList.remove("active"));
+  [tab221, tab22, tab21, tab201, tab20, tab10].forEach(btn => btn?.classList.remove("active"));
 
+  if (version === "2.21" && tab221) tab221.classList.add("active");
   if (version === "2.2" && tab22) tab22.classList.add("active");
   if (version === "2.1" && tab21) tab21.classList.add("active");
   if (version === "2.01" && tab201) tab201.classList.add("active");
@@ -1592,6 +1803,7 @@ async function refreshAuthUI() {
 }
 
 updateSyncStatusUI();
+updateTopbarAccountUI();
 }
 
 function getLocalSaveTimestamp() {
@@ -1715,6 +1927,7 @@ function applyFullSaveData(saveData) {
       const profileModal = document.getElementById("profileModal");
   if (profileModal && profileModal.style.display === "flex") {
     renderProfileModal();
+    updateTopbarAccountUI();
   }
   } finally {
     applyingCloudSave = false;
@@ -1756,25 +1969,103 @@ function updateSyncStatusUI() {
   const syncText = document.getElementById("syncStatusText");
   const syncButton = document.getElementById("syncNowMenuButton");
 
-  if (!syncText || !syncButton) return;
+  const profileMenuSyncText = document.getElementById("profileMenuSyncText");
+  const profileMenuSyncNowButton = document.getElementById("profileMenuSyncNowButton");
+  const topbarSyncText = document.getElementById("topbarSyncText");
 
-  if (!currentUser) {
-  syncText.textContent = "No cloud sync";
-  syncButton.style.display = "none";
-  updateGuestCloudBadge();
-  return;
-}
+  let syncMessage = "No cloud sync";
+  let topbarMessage = "";
+  let showSyncButton = false;
 
-  if (isSyncingNow) {
-    syncText.textContent = "Syncing...";
-  } else if (lastSuccessfulSyncAt) {
-    syncText.textContent = `Last synced ${formatTimeAgo(lastSuccessfulSyncAt)}`;
-  } else {
-    syncText.textContent = syncStatus || "Cloud sync ready";
+  if (currentUser) {
+    showSyncButton = true;
+
+    if (isSyncingNow) {
+      syncMessage = "Syncing...";
+      topbarMessage = "Cloud syncing...";
+    } else if (lastSuccessfulSyncAt) {
+      syncMessage = `Last synced ${formatTimeAgo(lastSuccessfulSyncAt)}`;
+      topbarMessage = `Cloud synced ${formatTimeAgo(lastSuccessfulSyncAt)}`;
+    } else {
+      syncMessage = syncStatus || "Cloud sync ready";
+      topbarMessage = "Cloud save enabled";
+    }
   }
 
-  syncButton.style.display = "flex";
+  if (syncText) syncText.textContent = syncMessage;
+  if (profileMenuSyncText) profileMenuSyncText.textContent = syncMessage;
+  if (topbarSyncText) topbarSyncText.textContent = topbarMessage;
+
+  if (syncButton) syncButton.style.display = showSyncButton ? "flex" : "none";
+  if (profileMenuSyncNowButton) profileMenuSyncNowButton.style.display = showSyncButton ? "flex" : "none";
+
   updateGuestCloudBadge();
+}
+
+function updateTopbarAccountUI() {
+  const profileChipWrap = document.getElementById("profileChipWrap");
+  const guestAuthButton = document.getElementById("guestAuthButton");
+  const profileMenuDropdown = document.getElementById("profileMenuDropdown");
+
+  const topbarAvatarImage = document.getElementById("topbarAvatarImage");
+  const topbarUsernameText = document.getElementById("topbarUsernameText");
+
+  const profileMenuAccountText = document.getElementById("profileMenuAccountText");
+  const profileMenuAccountButton = document.getElementById("profileMenuAccountButton");
+  const profileMenuAccountButtonText = document.getElementById("profileMenuAccountButtonText");
+  const profileMenuProfileButton = document.getElementById("profileMenuProfileButton");
+  const profileMenuLogoutButton = document.getElementById("profileMenuLogoutButton");
+  const profileMenuDevResetButton = document.getElementById("profileMenuDevResetButton");
+
+  const profile = getProfile();
+  const avatarKey = profile?.avatar || "default";
+  const avatarUrl = getAvatarUrl(avatarKey);
+
+  if (topbarAvatarImage) {
+    topbarAvatarImage.src = avatarUrl;
+  }
+
+  if (!currentUser) {
+    closeProfileMenu();
+
+    if (profileChipWrap) profileChipWrap.style.display = "none";
+    if (guestAuthButton) guestAuthButton.style.display = "flex";
+    if (profileMenuDropdown) profileMenuDropdown.style.display = "none";
+
+    if (topbarUsernameText) topbarUsernameText.textContent = "";
+    if (profileMenuAccountText) profileMenuAccountText.textContent = "Not signed in";
+    if (profileMenuAccountButtonText) profileMenuAccountButtonText.textContent = "Sign Up / Log In";
+
+    if (profileMenuProfileButton) profileMenuProfileButton.style.display = "none";
+    if (profileMenuLogoutButton) profileMenuLogoutButton.style.display = "none";
+    if (profileMenuDevResetButton) profileMenuDevResetButton.style.display = "none";
+    if (profileMenuAccountButton) profileMenuAccountButton.style.display = "flex";
+
+    updateSyncStatusUI();
+    return;
+  }
+
+  const username =
+    currentUser.user_metadata?.username ||
+    currentUser.email ||
+    "Player";
+
+  if (profileChipWrap) profileChipWrap.style.display = "flex";
+  if (guestAuthButton) guestAuthButton.style.display = "none";
+
+  if (topbarUsernameText) topbarUsernameText.textContent = username;
+  if (profileMenuAccountText) profileMenuAccountText.textContent = `Signed in as ${username}`;
+  if (profileMenuAccountButtonText) profileMenuAccountButtonText.textContent = "Manage Account";
+
+  if (profileMenuProfileButton) profileMenuProfileButton.style.display = "flex";
+  if (profileMenuLogoutButton) profileMenuLogoutButton.style.display = "flex";
+  if (profileMenuDevResetButton) {
+    profileMenuDevResetButton.style.display = username === "DEV_CoachLoaf" ? "flex" : "none";
+  }
+
+  if (profileMenuAccountButton) profileMenuAccountButton.style.display = "none";
+
+  updateSyncStatusUI();
 }
 
 function updateGuestCloudBadge() {
@@ -1817,7 +2108,16 @@ async function loadCloudSave() {
 
   const { data, error } = await supabaseClient
     .from("game_saves")
-    .select("username, email, save_data, updated_at")
+    .select(`
+      username,
+      email,
+      daily_streak,
+      daily_wins,
+      bonus_wins,
+      achievements_unlocked,
+      save_data,
+      updated_at
+    `)
     .eq("user_id", currentUser.id)
     .maybeSingle();
 
@@ -1828,8 +2128,24 @@ async function loadCloudSave() {
 
   if (!data) return null;
 
+  const mergedSaveData = {
+    ...(data.save_data || {})
+  };
+
+  const mergedStats = {
+    ...getDefaultStats(),
+    ...(mergedSaveData.stats || {})
+  };
+
+  mergedStats.wins = Math.max(mergedStats.wins || 0, Number(data.daily_wins || 0));
+  mergedStats.bonusWins = Math.max(mergedStats.bonusWins || 0, Number(data.bonus_wins || 0));
+  mergedStats.streak = Math.max(mergedStats.streak || 0, Number(data.daily_streak || 0));
+  mergedStats.best = Math.max(mergedStats.best || 0, mergedStats.streak || 0);
+
+  mergedSaveData.stats = mergedStats;
+
   return {
-    ...(data.save_data || {}),
+    ...mergedSaveData,
     username: data.username || "",
     email: data.email || "",
     updatedAt: data.updated_at || data.save_data?.updatedAt || ""
@@ -1876,6 +2192,7 @@ const payload = {
   if (error) {
     console.error("Cloud save error:", error);
     setSyncStatus("Sync failed");
+    updateTopbarAccountUI();
     updateSyncStatusUI();
     return;
   }
@@ -1884,6 +2201,7 @@ const payload = {
   setCloudSaveTimestamp(timestamp);
   lastSuccessfulSyncAt = timestamp;
   setSyncStatus("Synced just now");
+  updateTopbarAccountUI();
 
   if (force) {
     console.log("Cloud save complete");
@@ -2323,8 +2641,6 @@ function reconcileAchievementsFromCurrentState() {
 
   if (achievements["hidden_lightning_kicks"]) {
   updateProgress("hidden_lightning_kicks", 100, 100);
-} else {
-  updateProgress("hidden_lightning_kicks", Math.min(logoClickStreakCount, 100), 100);
 }
 
   renderAchievementsModalIfOpen();
@@ -2490,10 +2806,13 @@ function playPitchedSfx(src, options = {}) {
   } = options;
 
   try {
-    const sound = new Audio(src);
+    const sound = getPooledSfx(src);
+    if (!sound) return;
+
     const variation = pitchMin + Math.random() * (pitchMax - pitchMin);
 
-    sound.preload = "auto";
+    sound.pause();
+    sound.currentTime = 0;
     sound.playbackRate = variation;
     sound.volume = Math.max(0, Math.min(1, sfxVolume * volumeMultiplier));
 
@@ -2510,6 +2829,7 @@ function triggerHaptic(pattern = 10) {
 }
 
 Object.values(sounds).forEach(sound => {
+  sound.preload = "auto";
   sound.load();
 });
 
@@ -2565,6 +2885,7 @@ fetch("songs.json")
     updateCountdown();
 setInterval(updateCountdown, 1000);
 startSyncStatusTicker();
+updateTopbarAccountUI();
 updateModeButtons();
 applySfxVolume();
 updateSettingsUI();
@@ -5091,7 +5412,23 @@ document
     input.addEventListener("change", updateEndlessSetupBestText);
   });
 
+  window.addEventListener("pointerdown", unlockSfx, { once: true });
+  window.addEventListener("touchstart", unlockSfx, { once: true });
+
   document.addEventListener("click", (e) => {
+
+
+  const profileChipButton = document.getElementById("profileChipButton");
+  const profileMenuDropdown = document.getElementById("profileMenuDropdown");
+
+  if (
+    profileMenuDropdown &&
+    profileChipButton &&
+    !profileMenuDropdown.contains(e.target) &&
+    !profileChipButton.contains(e.target)
+  ) {
+    closeProfileMenu();
+  }
   const button = e.target.closest("button");
   if (!button) return;
 
