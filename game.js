@@ -28,6 +28,8 @@ const STORAGE_KEYS = {
   ACHIEVEMENTS: "thundle_achievements"
 };
 
+const LAST_AUTH_USER_ID_KEY = "thundleLastAuthUserId";
+
 let leaderboardSortKey = "daily_wins";
 let favoriteSongSearchResults = [];
 let profileDraft = null;
@@ -536,6 +538,8 @@ const WHATS_NEW_CONTENT = {
   <ul>
     <li>Added a new top-left account badge with profile picture, username, and cloud sync status.</li>
     <li>Signed-out players now see a simple Log In / Sign Up button instead of the profile dropdown.</li>
+    <li>Improved account sync safety so logging into an existing account no longer overwrites cloud progress with browser test data on load.</li>
+    <li>New account signups can still carry over local progress, but existing account logins now prioritize the cloud save.</li>
     <li>Fixed major performance issues caused by repeated logo clicking.</li>
     <li>Logo click progress now saves after a delay instead of after every click.</li>
     <li>Improved mobile sound effect behavior and reduced delayed/cut-off playback.</li>
@@ -1638,7 +1642,7 @@ async function submitAuth() {
       saveProfile(getDefaultProfile());
       markWelcomeSeen();
       await refreshAuthUI();
-      await syncSaveDataAfterLogin();
+      await syncSaveDataAfterLogin({ allowLocalSeed: true });
       closeAuthModal();
       showWelcomeBackBanner();
       return;
@@ -1654,7 +1658,7 @@ async function submitAuth() {
     currentUser = data.user || null;
     markWelcomeSeen();
     await refreshAuthUI();
-    await syncSaveDataAfterLogin();
+    await syncSaveDataAfterLogin({ allowLocalSeed: false });
     closeAuthModal();
     showWelcomeBackBanner();
   } catch (error) {
@@ -1835,6 +1839,94 @@ function markLocalSaveUpdated() {
 
   if (currentUser && !applyingCloudSave) {
     setSyncStatus("Local changes not yet synced");
+  }
+}
+
+function resetLocalStateForCloudAccount() {
+  applyingCloudSave = true;
+
+  try {
+    stopCurrentAudio();
+    stopResultPreviewAudio();
+    stopMainRevealAudio();
+
+    localStorage.setItem("thundleStats", JSON.stringify(getDefaultStats()));
+    localStorage.removeItem("thundleProgress");
+    localStorage.removeItem("thundleEndlessProgress");
+    localStorage.setItem("thundleProfile", JSON.stringify(getDefaultProfile()));
+    localStorage.setItem(
+      STORAGE_KEYS.ACHIEVEMENTS,
+      JSON.stringify({
+        unlocked: {},
+        progress: {}
+      })
+    );
+    localStorage.setItem(ENDLESS_CONFIG_BESTS_KEY, JSON.stringify({}));
+    localStorage.setItem("thundleEndlessBest", "0");
+
+    setLocalSaveTimestamp("");
+    setCloudSaveTimestamp("");
+    lastSuccessfulSyncAt = "";
+
+    achievements = {};
+    achievementProgress = {};
+    endlessBest = 0;
+    endlessScore = 0;
+    endlessCurrentSong = null;
+    endlessCurrentStartTime = 0;
+    endlessQueue = [];
+    endlessUsedIndices = [];
+    endlessNewBestCelebrated = false;
+    endlessSettings = {
+      guessLimit: 6,
+      clipStart: "beginning"
+    };
+
+    gameMode = "daily";
+    songIndex = 0;
+    guessNumber = 0;
+    guessHistory = [[], []];
+    bonusStarted = false;
+    gameFinished = false;
+    waveformPreviewShown = false;
+
+    const endlessSetupCard = document.getElementById("endlessSetupCard");
+    const gameCard = document.getElementById("game");
+    const nextCard = document.getElementById("countdownCard");
+    const showResultsSection = document.getElementById("showResultsSection");
+    const mainBonusButton = document.getElementById("mainBonusButton");
+
+    if (endlessSetupCard) endlessSetupCard.style.display = "none";
+    if (gameCard) gameCard.style.display = "block";
+    if (nextCard) nextCard.style.display = "block";
+    if (showResultsSection) showResultsSection.style.display = "none";
+    if (mainBonusButton) mainBonusButton.style.display = "none";
+
+    document.getElementById("songLabel").innerText = "Song #1";
+    document.getElementById("roundHint").innerText = "Starts at the beginning of the track.";
+    document.getElementById("feedback").innerText = "";
+    document.getElementById("guessInput").value = "";
+    document.getElementById("guessInput").disabled = false;
+    document.getElementById("guessButton").disabled = false;
+    document.getElementById("suggestions").innerHTML = "";
+    document.getElementById("artWrap").style.display = "none";
+
+    hideEndlessActionButtons();
+    hideWaveformPreviewMarker();
+
+    pickDailySongs();
+    preloadTodaySongs();
+    showPuzzleNumber();
+    renderAttemptRow();
+    updateModeButtons();
+    updateEndlessSetupBestText();
+    updateEndlessRunCounter();
+    updateEndlessRestartButton();
+    renderAchievementsModalIfOpen();
+    renderProfileModalIfOpen();
+    updateTopbarAccountUI();
+  } finally {
+    applyingCloudSave = false;
   }
 }
 
@@ -2217,17 +2309,17 @@ function scheduleCloudSave() {
   }, 600);
 }
 
-async function syncSaveDataAfterLogin() {
+async function syncSaveDataAfterLogin({ allowLocalSeed = false } = {}) {
   if (!currentUser) return;
+
+  const previousUserId = localStorage.getItem(LAST_AUTH_USER_ID_KEY) || "";
+  const switchedAccounts = !!previousUserId && previousUserId !== currentUser.id;
+  localStorage.setItem(LAST_AUTH_USER_ID_KEY, currentUser.id);
 
   const cloudSave = await loadCloudSave();
   const localSave = getLocalSaveBundle();
-
   const localTimestamp = getLocalSaveTimestamp() || "";
-  const cloudTimestamp = cloudSave?.updatedAt || "";
 
-  // Fresh browser / no meaningful local save yet:
-  // trust cloud if it exists
   const hasMeaningfulLocalSave =
     !!localTimestamp &&
     (
@@ -2239,34 +2331,24 @@ async function syncSaveDataAfterLogin() {
       Object.keys(localSave.endlessConfigBests || {}).length > 0
     );
 
-  if (!cloudSave) {
-    if (hasMeaningfulLocalSave) {
-      await saveToCloud(true);
-    }
+  // Existing account login: always trust cloud, never auto-push local on login.
+  if (cloudSave) {
+    applyFullSaveData(cloudSave);
     reconcileAchievementsFromCurrentState();
     return;
   }
 
-  if (!hasMeaningfulLocalSave) {
-    applyFullSaveData(cloudSave);
-    reconcileAchievementsFromCurrentState();
+  // Brand-new signup: okay to seed cloud from meaningful local progress.
+  if (allowLocalSeed && hasMeaningfulLocalSave && !switchedAccounts) {
     await saveToCloud(true);
+    reconcileAchievementsFromCurrentState();
     return;
   }
 
-  const localTime = localTimestamp ? new Date(localTimestamp).getTime() : 0;
-  const cloudTime = cloudTimestamp ? new Date(cloudTimestamp).getTime() : 0;
-
-  if (cloudTime > localTime) {
-    applyFullSaveData(cloudSave);
-  } else if (localTime > cloudTime) {
-    await saveToCloud(true);
-  } else {
-    applyFullSaveData(cloudSave);
-  }
-
+  // Logged into an account with no cloud save:
+  // start that account fresh locally instead of importing browser guest progress.
+  resetLocalStateForCloudAccount();
   reconcileAchievementsFromCurrentState();
-  await saveToCloud(true);
 }
 
 async function devResetAccountProgress() {
@@ -2900,7 +2982,7 @@ if (devButton && !DEV_MODE) {
 
 refreshAuthUI().then(() => {
   if (currentUser) {
-    syncSaveDataAfterLogin().then(() => {
+    syncSaveDataAfterLogin({ allowLocalSeed: false }).then(() => {
       showWelcomeBackBanner();
     });
   } else {
